@@ -73,35 +73,31 @@ def root():
 
 
 @app.post("/predict")
-
 def predict_news_impact(request: NewsRequest):
 
     result = classifier(request.headline)[0]
 
-
-
     label = result["label"]
-
     confidence = float(result["score"])
 
-
-
-    # LABEL_1 = positive return, LABEL_0 = negative/zero return
-
-    direction = "UP" if label == "LABEL_1" else "DOWN"
-
-
+    # Convert Hugging Face label to integer + direction
+    if label == "LABEL_1":
+        direction = "UP"
+        numeric_label = 1
+    else:
+        direction = "DOWN"
+        numeric_label = 0
 
     return {
-
         "ticker": request.ticker.upper(),
-
         "headline": request.headline,
-
-        "predictedDirection": direction,
-
-        "confidence": round(confidence, 4),
-
-        "modelVersion": "finbert-eventret-v1"
-
+        "prediction": {
+            "direction": direction,
+            "label": numeric_label,
+            "confidence": round(confidence, 3)
+        },
+        "model": {
+            "name": "FinBERT",
+            "version": "1.0"
+        }
     }
