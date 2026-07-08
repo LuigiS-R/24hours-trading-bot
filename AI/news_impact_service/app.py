@@ -97,7 +97,7 @@ def predict_news_impact(request: NewsRequest):
             "confidence": round(confidence, 3)
         },
         "model": {
-            "name": "FinBERT",
+            "name": "FinBERT-EventRet",
             "version": "1.0"
         }
     }
