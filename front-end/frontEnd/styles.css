@@ -1,0 +1,58 @@
+/* Base reset */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background:#777; display:flex; align-items:center; justify-content:center; padding:0;color:#e6e6e6}
+
+.stage{width:100%;height:100vh;display:flex;justify-content:center}
+.window{width:100%;max-width:none;height:100%;background:#0f0f10;border-radius:0;box-shadow:0 40px 80px rgba(0,0,0,0.6);overflow:hidden;position:relative}
+
+/* Topbar */
+.topbar{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-bottom:1px solid rgba(255,255,255,0.03);color:rgba(255,255,255,0.85)}
+.hamburger{background:transparent;border:0;color:inherit;font-size:20px;cursor:pointer}
+.tb-center{font-weight:600;letter-spacing:1px}
+.tb-right .icon{margin-left:12px;opacity:0.9}
+
+/* Hero area with background placeholder */
+.hero{position:relative;height:calc(100% - 64px - 140px); /* leave space for footer */}
+.bg-placeholder{position:absolute;inset:0;background-color:#060606;background-image: url('../UIX/background1.png'), url('../UIX/background-reference.jpeg'), url('../UIX/background.png'), radial-gradient(circle at 30% 30%,rgba(255,255,255,0.03),transparent 20%), linear-gradient(180deg,#0b0b0c,#101012);filter:grayscale(100%) brightness(45%);background-size:cover;background-position:center;}
+.bg-placeholder::after{content:'';position:absolute;inset:0;background-image:radial-gradient(closest-side, rgba(255,255,255,0.02), transparent 40%);pointer-events:none}
+
+/* Login card */
+.login-card{position:absolute;right:72px;top:96px;width:360px;min-height:520px;padding:32px 28px;border-radius:16px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.06);backdrop-filter:blur(8px);box-shadow:0 8px 30px rgba(0,0,0,0.6);color:#f3f3f3;display:flex;flex-direction:column;justify-content:space-between}
+.login-card h1{font-size:26px;margin-bottom:8px}
+.login-card .lead{font-size:13px;color:rgba(255,255,255,0.65);margin-bottom:12px}
+
+.login-form{flex:1;display:flex;flex-direction:column;justify-content:center;gap:0}
+.login-form .field{display:block;margin:0 0 0 0}
+.login-form .field:first-of-type{margin-bottom:calc(14px * 1.1)} /* email -> password: +10% */
+.login-form .field:nth-of-type(2){margin-bottom:calc(14px * 1.2)}      /* password -> button: +20% */
+.login-form input{width:100%;padding:12px 16px;border-radius:28px;border:1px solid rgba(255,255,255,0.08);background:transparent;color:#eaeaea;font-size:14px;outline:none}
+.login-form input::placeholder{color:rgba(255,255,255,0.45)}
+
+.form-row{display:flex;align-items:center;justify-content:space-between;margin:8px 0 18px}
+.remember{font-size:13px;color:rgba(255,255,255,0.7)}
+.remember input{margin-right:8px}
+.forgot{font-size:13px;color:rgba(255,255,255,0.7);text-decoration:underline;opacity:0.9}
+
+.btn{display:inline-block;padding:12px 24px;border-radius:28px;border:0;cursor:pointer;font-weight:600}
+.btn.primary{width:100%;background:linear-gradient(90deg,#2b2bff 0%,#5a00ff 100%);color:#fff;box-shadow:0 8px 26px rgba(60,40,255,0.22)}
+
+.signup{margin-top:14px;font-size:13px;color:rgba(255,255,255,0.65)}
+.signup a{color:#8aa2ff;text-decoration:underline}
+
+/* Footer */
+.footer{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg, rgba(0,0,0,0.8), rgba(0,0,0,0.95));padding:34px 56px}
+.footer-inner{display:flex;gap:20px;align-items:flex-start;color:rgba(255,255,255,0.85)}
+.f-col{flex:1}
+.f-left{font-weight:600}
+.f-center{text-align:center}
+.f-right ul{list-style:none;font-size:13px;color:rgba(255,255,255,0.75)}
+.f-right li{margin-bottom:6px}
+
+/* Small screens */
+@media (max-width:900px){
+  .window{height:auto;padding-bottom:28px}
+  .login-card{position:static;margin:28px auto 0;right:auto;top:auto}
+  .hero{height:auto;padding:36px 20px}
+  .footer-inner{flex-direction:column;align-items:flex-start}
+}
