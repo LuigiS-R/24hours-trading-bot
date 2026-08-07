@@ -37,6 +37,14 @@ body{font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Rob
 .btn{display:inline-block;padding:12px 24px;border-radius:28px;border:0;cursor:pointer;font-weight:600}
 .btn.primary{width:100%;background:linear-gradient(90deg,#2b2bff 0%,#5a00ff 100%);color:#fff;box-shadow:0 8px 26px rgba(60,40,255,0.22)}
 
+.auth-action{display:none}
+.login-card[data-mode="login"] .auth-action-login{display:inline-block}
+.login-card[data-mode="signup"] .auth-action-signup{display:inline-block}
+
+.signup-copy{display:none}
+.login-card[data-mode="login"] .signup-copy-login{display:inline}
+.login-card[data-mode="signup"] .signup-copy-signup{display:inline}
+
 .signup{margin-top:14px;font-size:13px;color:rgba(255,255,255,0.65)}
 .signup a{color:#8aa2ff;text-decoration:underline}
 

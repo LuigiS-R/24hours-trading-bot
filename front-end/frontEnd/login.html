@@ -20,11 +20,11 @@
       <main class="hero">
         <div class="bg-placeholder" aria-hidden="true"></div>
 
-        <aside class="login-card">
+        <aside class="login-card" id="authCard" data-mode="login">
           <h1>Tradify</h1>
           <p class="lead">The market never sleeps. Neither do we.</p>
 
-          <form class="login-form" onsubmit="return false;">
+          <form class="login-form" id="authForm">
             <label class="field">
               <input type="email" placeholder="E-mail" required>
             </label>
@@ -33,12 +33,15 @@
               <input type="password" placeholder="Password" required>
             </label>
 
-        
-
-            <button class="btn primary" type="submit">Login</button>
+            <button class="btn primary auth-action auth-action-login" type="submit">Login</button>
+            <button class="btn primary auth-action auth-action-signup" type="submit">Sign Up</button>
           </form>
 
-          <p class="signup">Don't have an account? <a href="#">Sign Up</a></p>
+          <p class="signup">
+            <span class="signup-copy signup-copy-login">Don't have an account?</span>
+            <span class="signup-copy signup-copy-signup">Already have an account?</span>
+            <a href="#" id="authToggle">Sign Up</a>
+          </p>
         </aside>
       </main>
 
@@ -60,5 +63,8 @@
       </footer>
     </div>
   </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/keycloak-js/dist/keycloak.min.js"></script>
+  <script src="login.js"></script>
 </body>
 </html>
