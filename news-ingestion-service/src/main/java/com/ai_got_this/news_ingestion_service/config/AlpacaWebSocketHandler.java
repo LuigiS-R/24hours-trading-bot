@@ -1,8 +1,6 @@
 package com.ai_got_this.news_ingestion_service.config;
 
-import com.ai_got_this.news_ingestion_service.dto.AlpacaMessage;
-import com.ai_got_this.news_ingestion_service.dto.NewsHeadline;
-import com.ai_got_this.news_ingestion_service.exception.ErrorAlpacaMessageException;
+import com.ai_got_this.news_ingestion_service.dto.*;
 import com.ai_got_this.news_ingestion_service.service.NewsPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -19,49 +17,50 @@ import java.util.List;
 public class AlpacaWebSocketHandler extends TextWebSocketHandler{
     private ObjectMapper objectMapper;
     private NewsPublisher newsPublisher;
+    private AlpacaProperties alpacaProperties;
 
-    public AlpacaWebSocketHandler(ObjectMapper objectMapper, NewsPublisher newsPublisher) {
+    public AlpacaWebSocketHandler(ObjectMapper objectMapper, NewsPublisher newsPublisher, AlpacaProperties alpacaProperties) {
         this.objectMapper = objectMapper;
         this.newsPublisher = newsPublisher;
+        this.alpacaProperties = alpacaProperties;
     }
 
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
-        System.out.println("Connected to Alpaca WebSocket server");
-        System.out.println("Subscribing to news stream...");
-        session.sendMessage(new TextMessage("{\"action\": \"subscribe\", \"news\": [\"*\"], \"symbols\": [\"*\"]}"));
+        String subscriptionMessage = alpacaProperties.getSubscriptionMessage();
+        log.info("Connected to Alpaca WebSocket server");
+        log.info("Subscribing to news stream...");
+        session.sendMessage(new TextMessage(subscriptionMessage));
     }
-
-
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message){
         try{
             AlpacaMessage alpacaMessage = objectMapper.readValue(message.getPayload(), AlpacaMessage[].class)[0];
 
-            if (alpacaMessage.getType().equals("error")) {
-                Integer errorCode = alpacaMessage.getCode();
-                String errorMessage = alpacaMessage.getMsg();
+            if (alpacaMessage instanceof AlpacaErrorMessage errorMessage) {
+                Integer errorCode = errorMessage.getCode();
+                String errorMsg = errorMessage.getMsg();
 
-                throw new ErrorAlpacaMessageException("Error [" + errorCode + "]: " + errorMessage);
+                log.error("Received error message from Alpaca's websocket: code: {} msg: {}", errorCode, errorMsg);
             }
 
-            if (alpacaMessage.getType().equals("n")) {
-                //Handle news message
-                List<String> relatedSymbols = alpacaMessage.getSymbols();
+            if (alpacaMessage instanceof AlpacaNewsMessage alpacaNewsMessage){
+                List<String> relatedSymbols = alpacaNewsMessage.getSymbols();
                 for(String symbol: relatedSymbols){
                     NewsHeadline newsHeadline = NewsHeadline.builder()
                             .ticket(symbol)
-                            .headline(alpacaMessage.getHeadline())
+                            .headline(alpacaNewsMessage.getHeadline())
                             .build();
 
                     newsPublisher.publishNews("financial-news-exchange", newsHeadline, "financial-news");
                 }
             }
-        }
-        catch(ErrorAlpacaMessageException e){
-            log.error(e.getMessage());
+
+            if (alpacaMessage instanceof AlpacaUnknownMessage unknownMessage) {
+                log.warn("Received unknown message from Alpaca's websocket: type: {} {}", unknownMessage.getType(), unknownMessage);
+            }
         }
         catch(Exception e){
             log.error(e.getMessage());
