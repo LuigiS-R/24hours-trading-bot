@@ -10,8 +10,11 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 
 @Configuration
 public class WebSocketClientConfig {
-    private final String alpacaAPIId = "";
-    private final String alpacaAPIKey = "";
+    private final AlpacaProperties alpacaProperties;
+
+    public WebSocketClientConfig(AlpacaProperties alpacaProperties) {
+        this.alpacaProperties = alpacaProperties;
+    }
 
     @Bean
     public ObjectMapper objectMapper() {
@@ -19,16 +22,19 @@ public class WebSocketClientConfig {
     }
 
     @Bean
-    @Profile("!test")
     public WebSocketConnectionManager webConnectionManager(AlpacaWebSocketHandler alpacaWebSocketHandler) {
+        String apiKeyId = alpacaProperties.getKey();
+        String apiSecretKey = alpacaProperties.getSecret();
+        String marketStreamUrl = alpacaProperties.getMarketStreamUrl();
+
         HttpHeaders headers = new HttpHeaders();
-        headers.add("APCA-API-KEY-ID", alpacaAPIId);
-        headers.add("APCA-API-SECRET-KEY", alpacaAPIKey);
+        headers.add("APCA-API-KEY-ID", apiKeyId);
+        headers.add("APCA-API-SECRET-KEY", apiSecretKey);
 
         WebSocketConnectionManager manager = new WebSocketConnectionManager(
                 new StandardWebSocketClient(),
                 alpacaWebSocketHandler,
-                "wss://stream.data.alpaca.markets/v2/iex"
+                marketStreamUrl
         );
         manager.setAutoStartup(true);
         manager.setHeaders(headers);

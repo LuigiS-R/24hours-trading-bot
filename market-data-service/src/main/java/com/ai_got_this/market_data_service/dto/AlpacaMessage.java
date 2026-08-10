@@ -1,32 +1,24 @@
 package com.ai_got_this.market_data_service.dto;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import lombok.Data;
 
-import java.util.List;
-
-@JsonIgnoreProperties(ignoreUnknown = true)
 @Data
-public class AlpacaMessage {
+@JsonTypeInfo(
+        use = JsonTypeInfo.Id.NAME,
+        include = JsonTypeInfo.As.PROPERTY,
+        property = "T",
+        visible = true,
+        defaultImpl = AlpacaUnknownMessage.class
+)
+@JsonSubTypes({
+        @JsonSubTypes.Type(value = AlpacaBarMessage.class, name = "b"),
+        @JsonSubTypes.Type(value = AlpacaErrorMessage.class, name = "error"),
+        @JsonSubTypes.Type(value = AlpacaErrorMessage.class, name = "other")
+})
+public abstract class AlpacaMessage {
     @JsonProperty("T")
     private String type;
-    @JsonProperty("S")
-    private String symbol;
-    @JsonProperty("o")
-    private Double open;
-    @JsonProperty("h")
-    private Double high;
-    @JsonProperty("l")
-    private Double low;
-    @JsonProperty("c")
-    private Double close;
-    @JsonProperty("v")
-    private Long volume;
-    @JsonProperty("n")
-    private Integer tradeCount;
-    @JsonProperty("t")
-    private String timestamp;
-    private String msg;
-    private Integer code;
 }
