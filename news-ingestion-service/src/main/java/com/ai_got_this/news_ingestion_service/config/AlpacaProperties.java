@@ -11,4 +11,5 @@ public class AlpacaProperties {
     private String key;
     private String secret;
     private String newsStreamUrl;
+    private String subscriptionMessage;
 }
