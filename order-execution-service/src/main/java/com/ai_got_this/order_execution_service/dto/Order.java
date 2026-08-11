@@ -12,6 +12,5 @@ public class Order {
     private int quantity;
     private String side;
     private String type = "market";
-    @JsonProperty("time_in_force")
     private String timeInForce;
 }
