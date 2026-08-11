@@ -13,7 +13,7 @@ public class ListenerService {
         this.broker = broker;
     }
 
-    @RabbitListener(queues = "approved.orders")
+    @RabbitListener(queues = "orders.approved")
     public void listen(Order order) {
         broker.placeOrder(order);
     }

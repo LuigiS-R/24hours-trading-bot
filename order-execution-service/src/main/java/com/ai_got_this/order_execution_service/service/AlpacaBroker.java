@@ -1,5 +1,6 @@
 package com.ai_got_this.order_execution_service.service;
 
+import com.ai_got_this.order_execution_service.config.AlpacaProperties;
 import com.ai_got_this.order_execution_service.dto.Order;
 import com.ai_got_this.order_execution_service.dto.OrderResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -15,15 +16,17 @@ import tools.jackson.databind.ObjectMapper;
 public class AlpacaBroker implements Broker{
     private RestTemplate restTemplate;
     private ObjectMapper objectMapper;
+    private AlpacaProperties alpacaProperties;
 
-    public AlpacaBroker(RestTemplate restTemplate, ObjectMapper objectMapper) {
+    public AlpacaBroker(RestTemplate restTemplate, ObjectMapper objectMapper, AlpacaProperties alpacaProperties) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
+        this.alpacaProperties = alpacaProperties;
     }
 
     @Override
     public void placeOrder(Order order) {
-        String url = "https://paper-api.alpaca.markets/v2/orders";
+        String url = alpacaProperties.getOrderEndpoint();
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(url, order, String.class);
             HttpStatusCode statusCode = response.getStatusCode();
