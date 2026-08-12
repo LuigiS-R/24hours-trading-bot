@@ -15,6 +15,7 @@ public class Account {
     @Id
     private String accountId;
     private String userId;
+    private String brokerName;
     private String brokerAccountId;
     private boolean isPaper;
     private double cashBalance;
