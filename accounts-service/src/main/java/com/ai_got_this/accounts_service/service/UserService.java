@@ -1,6 +1,7 @@
 package com.ai_got_this.accounts_service.service;
 
 import com.ai_got_this.accounts_service.entity.User;
+import com.ai_got_this.accounts_service.exception.UserAlreadyExistsException;
 import com.ai_got_this.accounts_service.repo.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -16,8 +17,7 @@ public class UserService {
 
     public void createUser(String userId, String email) {
         if (userRepository.existsById(userId)) {
-            log.error("Attempt to create user with existing userId: {}", userId);
-            return;
+            throw new UserAlreadyExistsException("Attempt to create user with existing userId: " + userId);
         }
 
         var user = User.builder()
@@ -27,5 +27,19 @@ public class UserService {
                 .build();
 
         userRepository.save(user);
+    }
+
+    public User createUser(User user) {
+        if (userRepository.existsById(user.getUserId())) {
+            throw new UserAlreadyExistsException("Attempt to create user with existing userId: " + user.getUserId());
+        }
+
+        if (user.getCreatedAt() == null) {
+            user.setCreatedAt(java.time.OffsetDateTime.now());
+        }
+
+        userRepository.save(user);
+
+        return user;
     }
 }
