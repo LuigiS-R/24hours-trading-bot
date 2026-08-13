@@ -9,3 +9,4 @@ joblib
 huggingface_hub
 pydantic
 scikit-learn
+pika
