@@ -1,29 +1,25 @@
 package com.ai_got_this.account_service.domain;
 
-import lombok.Data;
-
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
-
-
+import lombok.Data;
 
 @Data
 @Entity
 public class PositionProjection {
-    @Id
-    private UUID positionId;
+    @Id private UUID positionId;
 
-    @Column(nullable=false)
+    @Column(nullable = false)
     private UUID connectionId;
 
     private UUID alpacaAssetId;
 
-    @Column(nullable=false)
+    @Column(nullable = false)
     private String symbol;
 
-    @Column(nullable=false)
+    @Column(nullable = false)
     private BigDecimal quantity;
 
     private BigDecimal availableQuantity;
@@ -34,6 +30,6 @@ public class PositionProjection {
     private BigDecimal marketValue;
     private BigDecimal unrealizedPnl;
 
-    @Column(nullable=false)
+    @Column(nullable = false)
     private Instant updatedAt;
 }

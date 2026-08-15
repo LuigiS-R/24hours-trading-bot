@@ -1,24 +1,20 @@
 package com.ai_got_this.account_service.domain;
 
-import lombok.Data;
-
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
-
-
+import lombok.Data;
 
 @Data
 @Entity
 public class OrderProjection {
-    @Id
-    private UUID orderId;
+    @Id private UUID orderId;
 
-    @Column(nullable=false)
+    @Column(nullable = false)
     private UUID connectionId;
 
-    @Column(nullable=false, unique=true)
+    @Column(nullable = false, unique = true)
     private UUID alpacaOrderId;
 
     private String clientOrderId;
