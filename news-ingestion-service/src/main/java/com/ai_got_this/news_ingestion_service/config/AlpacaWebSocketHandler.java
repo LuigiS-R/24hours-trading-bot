@@ -18,11 +18,13 @@ public class AlpacaWebSocketHandler extends TextWebSocketHandler{
     private ObjectMapper objectMapper;
     private NewsPublisher newsPublisher;
     private AlpacaProperties alpacaProperties;
+    private AlpacaWebSocketReconnectSupervisor reconnectSupervisor;
 
-    public AlpacaWebSocketHandler(ObjectMapper objectMapper, NewsPublisher newsPublisher, AlpacaProperties alpacaProperties) {
+    public AlpacaWebSocketHandler(ObjectMapper objectMapper, NewsPublisher newsPublisher, AlpacaProperties alpacaProperties, AlpacaWebSocketReconnectSupervisor reconnectSupervisor) {
         this.objectMapper = objectMapper;
         this.newsPublisher = newsPublisher;
         this.alpacaProperties = alpacaProperties;
+        this.reconnectSupervisor = reconnectSupervisor;
     }
 
 
@@ -30,8 +32,19 @@ public class AlpacaWebSocketHandler extends TextWebSocketHandler{
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
         String subscriptionMessage = alpacaProperties.getSubscriptionMessage();
         log.info("Connected to Alpaca WebSocket server");
+        reconnectSupervisor.onConnectionEstablished();
         log.info("Subscribing to news stream...");
         session.sendMessage(new TextMessage(subscriptionMessage));
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, org.springframework.web.socket.CloseStatus status) {
+        reconnectSupervisor.onConnectionClosed(status);
+    }
+
+    @Override
+    public void handleTransportError(WebSocketSession session, Throwable exception) {
+        reconnectSupervisor.onTransportError(exception);
     }
 
     @Override
