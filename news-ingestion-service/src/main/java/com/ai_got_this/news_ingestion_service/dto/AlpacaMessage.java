@@ -18,6 +18,7 @@ import java.util.List;
 @JsonSubTypes({
         @JsonSubTypes.Type(value = AlpacaNewsMessage.class, name = "n"),
         @JsonSubTypes.Type(value = AlpacaErrorMessage.class, name = "error"),
+        @JsonSubTypes.Type(value = AlpacaSuccessMessage.class, name = "success"),
         @JsonSubTypes.Type(value = AlpacaErrorMessage.class, name = "other")
 })
 public abstract class AlpacaMessage {

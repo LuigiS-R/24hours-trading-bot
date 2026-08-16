@@ -43,7 +43,18 @@ public class AlpacaWebSocketHandler extends TextWebSocketHandler{
                 Integer errorCode = errorMessage.getCode();
                 String errorMsg = errorMessage.getMsg();
 
-                log.error("Received error message from Alpaca's websocket: code: {} msg: {}", errorCode, errorMsg);
+                if (errorCode != null && (errorCode == 401 || errorCode == 402 || errorCode == 404)) {
+                    log.error("Failed to authenticate with Alpaca WebSocket server: code: {} msg: {}", errorCode, errorMsg);
+                }
+                else {
+                    log.error("Received error message from Alpaca's websocket: code: {} msg: {}", errorCode, errorMsg);
+                }
+            }
+
+            if (alpacaMessage instanceof AlpacaSuccessMessage successMessage) {
+                if ("authenticated".equals(successMessage.getMsg())) {
+                    log.info("Successfully authenticated with Alpaca WebSocket server");
+                }
             }
 
             if (alpacaMessage instanceof AlpacaNewsMessage alpacaNewsMessage){
