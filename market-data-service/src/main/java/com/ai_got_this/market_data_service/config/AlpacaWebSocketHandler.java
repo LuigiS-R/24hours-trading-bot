@@ -10,6 +10,7 @@ import com.ai_got_this.market_data_service.service.MarketDataPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
@@ -22,23 +23,37 @@ public class AlpacaWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final MarketDataPublisher marketDataPublisher;
     private final AlpacaProperties alpacaProperties;
+    private final AlpacaWebSocketReconnectSupervisor reconnectSupervisor;
 
     public AlpacaWebSocketHandler(
             ObjectMapper objectMapper,
             MarketDataPublisher marketDataPublisher,
-            AlpacaProperties alpacaProperties
+            AlpacaProperties alpacaProperties,
+            AlpacaWebSocketReconnectSupervisor reconnectSupervisor
     ) {
         this.objectMapper = objectMapper;
         this.marketDataPublisher = marketDataPublisher;
         this.alpacaProperties = alpacaProperties;
+        this.reconnectSupervisor = reconnectSupervisor;
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
         String subscriptionMessage = alpacaProperties.getSubscriptionMessage();
         log.info("Connected to Alpaca WebSocket server");
+        reconnectSupervisor.onConnectionEstablished();
         log.info("Subscribing to market data stream...");
         session.sendMessage(new TextMessage(subscriptionMessage));
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        reconnectSupervisor.onConnectionClosed(status);
+    }
+
+    @Override
+    public void handleTransportError(WebSocketSession session, Throwable exception) {
+        reconnectSupervisor.onTransportError(exception);
     }
 
     @Override
