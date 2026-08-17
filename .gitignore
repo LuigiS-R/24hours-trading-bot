@@ -2,3 +2,4 @@
 __pycache__/ 
 *.pyc 
 AI/news_impact_service/.venv/ 
+node_modules
