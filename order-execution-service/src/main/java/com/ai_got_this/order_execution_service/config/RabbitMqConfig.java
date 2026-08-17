@@ -8,33 +8,35 @@ import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 public class RabbitMqConfig {
+    private final RabbitMqProperties rabbitMqProperties;
+
+    public RabbitMqConfig(RabbitMqProperties rabbitMqProperties) {
+        this.rabbitMqProperties = rabbitMqProperties;
+    }
+
     @Bean
     public MessageConverter jsonMessageConverter() {
         return new JacksonJsonMessageConverter();
     }
 
-    //Method returning a queue bean. Set the queue name as a placeholder
     @Bean
     public Queue orderEventsPortfolioQueue() {
-        return new Queue("order-events-portfolio", true);
+        return new Queue(rabbitMqProperties.getOrderEventsPortfolioQueue(), true);
     }
 
     @Bean
     public Queue orderEventsNotificationQueue() {
-        return new Queue("order-events-notification", true);
+        return new Queue(rabbitMqProperties.getOrderEventsNotificationQueue(), true);
     }
 
-    //Method returning a fanout exchange bean. Set the exchange name as a placeholder
     @Bean
     public FanoutExchange orderEventsFanoutExchange() {
-        return new FanoutExchange("order-events-fanout", true, false);
+        return new FanoutExchange(rabbitMqProperties.getOrderEventsExchange(), true, false);
     }
 
-    //Bind both queues to the fanout exchange
     @Bean
     public Binding orderEventsPortfolioBinding(Queue orderEventsPortfolioQueue, FanoutExchange orderEventsFanoutExchange) {
         return BindingBuilder.bind(orderEventsPortfolioQueue).to(orderEventsFanoutExchange);
