@@ -1,11 +1,11 @@
 import json
+import logging
 import os
 import threading
 import time
 
 import pika
 from fastapi import FastAPI
-from pydantic import BaseModel
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -19,6 +19,12 @@ from transformers import (
 
 MODEL_NAME = "andreamena/finbert-stock-news-impact-v10"
 
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 
 # --------------------------------------------------
 # RabbitMQ configuration
@@ -26,16 +32,47 @@ MODEL_NAME = "andreamena/finbert-stock-news-impact-v10"
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "trading-bot-dev")
+RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "1234")
+RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "trading-bot-dev-vhost")
+RABBITMQ_HEARTBEAT = int(os.getenv("RABBITMQ_HEARTBEAT", "60"))
+RABBITMQ_BLOCKED_CONNECTION_TIMEOUT = int(
+    os.getenv("RABBITMQ_BLOCKED_CONNECTION_TIMEOUT", "300")
+)
+RABBITMQ_RETRY_DELAY_SECONDS = int(
+    os.getenv("RABBITMQ_RETRY_DELAY_SECONDS", "5")
+)
+RABBITMQ_INPUT_EXCHANGE_TYPE = os.getenv(
+    "RABBITMQ_INPUT_EXCHANGE_TYPE", "direct"
+)
+RABBITMQ_OUTPUT_EXCHANGE_TYPE = os.getenv(
+    "RABBITMQ_OUTPUT_EXCHANGE_TYPE", "direct"
+)
+RABBITMQ_INPUT_EXCHANGE_DURABLE = os.getenv(
+    "RABBITMQ_INPUT_EXCHANGE_DURABLE", "true"
+).lower() in ("true", "1", "yes")
+RABBITMQ_OUTPUT_EXCHANGE_DURABLE = os.getenv(
+    "RABBITMQ_OUTPUT_EXCHANGE_DURABLE", "true"
+).lower() in ("true", "1", "yes")
+RABBITMQ_INPUT_QUEUE_DURABLE = os.getenv(
+    "RABBITMQ_INPUT_QUEUE_DURABLE", "true"
+).lower() in ("true", "1", "yes")
+RABBITMQ_OUTPUT_QUEUE_DURABLE = os.getenv(
+    "RABBITMQ_OUTPUT_QUEUE_DURABLE", "true"
+).lower() in ("true", "1", "yes")
+RABBITMQ_OUTPUT_DELIVERY_MODE = int(
+    os.getenv("RABBITMQ_OUTPUT_DELIVERY_MODE", "2")
+)
 
 # Existing News Ingestion Service RabbitMQ setup
-INPUT_EXCHANGE = "financial-news-exchange"
-INPUT_QUEUE = "financial-news"
-INPUT_ROUTING_KEY = "financial-news"
+INPUT_EXCHANGE = os.getenv("RABBITMQ_INPUT_EXCHANGE", "financial-news-exchange")
+INPUT_QUEUE = os.getenv("RABBITMQ_INPUT_QUEUE", "financial-news")
+INPUT_ROUTING_KEY = os.getenv("RABBITMQ_INPUT_ROUTING_KEY", "financial-news")
 
 # Sentiment Service output
-OUTPUT_EXCHANGE = "news-sentiment-exchange"
-OUTPUT_QUEUE = "news-sentiment"
-OUTPUT_ROUTING_KEY = "news-sentiment"
+OUTPUT_EXCHANGE = os.getenv("RABBITMQ_OUTPUT_EXCHANGE", "news-sentiment-exchange")
+OUTPUT_QUEUE = os.getenv("RABBITMQ_OUTPUT_QUEUE", "news-sentiment")
+OUTPUT_ROUTING_KEY = os.getenv("RABBITMQ_OUTPUT_ROUTING_KEY", "news-sentiment")
 
 
 # --------------------------------------------------
@@ -67,15 +104,6 @@ classifier = pipeline(
     model=model,
     tokenizer=tokenizer,
 )
-
-
-# --------------------------------------------------
-# Request schema
-# --------------------------------------------------
-
-class NewsRequest(BaseModel):
-    ticker: str
-    headline: str
 
 
 # --------------------------------------------------
@@ -117,7 +145,7 @@ def run_prediction(ticker: str, headline: str):
 
 
 # --------------------------------------------------
-# REST endpoints
+# REST endpoint
 # --------------------------------------------------
 
 @app.get("/")
@@ -133,25 +161,23 @@ def root():
     }
 
 
-@app.post("/predict")
-def predict_news_impact(request: NewsRequest):
-    return run_prediction(
-        ticker=request.ticker,
-        headline=request.headline,
-    )
-
-
-# --------------------------------------------------
 # RabbitMQ setup
 # --------------------------------------------------
 
 def create_rabbitmq_connection():
+    credentials = pika.PlainCredentials(
+        username=RABBITMQ_USER,
+        password=RABBITMQ_PASSWORD,
+    )
+
     return pika.BlockingConnection(
         pika.ConnectionParameters(
             host=RABBITMQ_HOST,
             port=RABBITMQ_PORT,
-            heartbeat=60,
-            blocked_connection_timeout=300,
+            virtual_host=RABBITMQ_VHOST,
+            credentials=credentials,
+            heartbeat=RABBITMQ_HEARTBEAT,
+            blocked_connection_timeout=RABBITMQ_BLOCKED_CONNECTION_TIMEOUT,
         )
     )
 
@@ -165,13 +191,13 @@ def rabbitmq_consumer():
             # Match the News Ingestion Service setup
             channel.exchange_declare(
                 exchange=INPUT_EXCHANGE,
-                exchange_type="direct",
-                durable=True,
+                exchange_type=RABBITMQ_INPUT_EXCHANGE_TYPE,
+                durable=RABBITMQ_INPUT_EXCHANGE_DURABLE,
             )
 
             channel.queue_declare(
                 queue=INPUT_QUEUE,
-                durable=True,
+                durable=RABBITMQ_INPUT_QUEUE_DURABLE,
             )
 
             channel.queue_bind(
@@ -183,13 +209,13 @@ def rabbitmq_consumer():
             # Declare our sentiment output
             channel.exchange_declare(
                 exchange=OUTPUT_EXCHANGE,
-                exchange_type="direct",
-                durable=True,
+                exchange_type=RABBITMQ_OUTPUT_EXCHANGE_TYPE,
+                durable=RABBITMQ_OUTPUT_EXCHANGE_DURABLE,
             )
 
             channel.queue_declare(
                 queue=OUTPUT_QUEUE,
-                durable=True,
+                durable=RABBITMQ_OUTPUT_QUEUE_DURABLE,
             )
 
             channel.queue_bind(
@@ -198,17 +224,9 @@ def rabbitmq_consumer():
                 routing_key=OUTPUT_ROUTING_KEY,
             )
 
-            # Process one news item at a time
-            channel.basic_qos(
-                prefetch_count=1
-            )
+            logger.info("Waiting for messages from RabbitMQ queue '%s'...", INPUT_QUEUE)
 
-            print(
-                f"Waiting for messages from RabbitMQ queue "
-                f"'{INPUT_QUEUE}'..."
-            )
-
-            def callback(ch, method, properties, body):
+            def callback(_channel, _method, _properties, body):
                 try:
                     message = json.loads(
                         body.decode("utf-8")
@@ -228,49 +246,40 @@ def rabbitmq_consumer():
                         body=json.dumps(prediction),
                         properties=pika.BasicProperties(
                             content_type="application/json",
-                            delivery_mode=2,
+                            delivery_mode=RABBITMQ_OUTPUT_DELIVERY_MODE,
                         ),
                     )
 
-                    print(
-                        f"{ticker} | "
-                        f"{prediction['prediction']['direction']} | "
-                        f"{prediction['prediction']['confidence']}"
+                    logger.info(
+                        "%s | %s | %s",
+                        ticker,
+                        prediction["prediction"]["direction"],
+                        prediction["prediction"]["confidence"],
                     )
 
-                    ch.basic_ack(
-                        delivery_tag=method.delivery_tag
-                    )
-
-                except Exception as e:
-                    print(
-                        "Error processing RabbitMQ message:",
-                        e
-                    )
-
-                    ch.basic_nack(
-                        delivery_tag=method.delivery_tag,
-                        requeue=False,
+                except Exception:
+                    # With auto-ack, RabbitMQ has already acknowledged this delivery.
+                    # Log the failure and leave the message unprocessed.
+                    logger.exception(
+                        "Error processing RabbitMQ message; it will not be retried."
                     )
 
             channel.basic_consume(
                 queue=INPUT_QUEUE,
                 on_message_callback=callback,
+                auto_ack=True,
             )
 
             channel.start_consuming()
 
-        except Exception as e:
-            print(
-                "RabbitMQ connection error:",
-                e
+        except Exception:
+            logger.exception("RabbitMQ connection error")
+            logger.info(
+                "Retrying connection in %s seconds...",
+                RABBITMQ_RETRY_DELAY_SECONDS,
             )
 
-            print(
-                "Retrying connection in 5 seconds..."
-            )
-
-            time.sleep(5)
+            time.sleep(RABBITMQ_RETRY_DELAY_SECONDS)
 
 
 # --------------------------------------------------
