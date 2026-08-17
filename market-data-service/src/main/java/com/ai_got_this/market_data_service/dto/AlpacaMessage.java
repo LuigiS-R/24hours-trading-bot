@@ -16,6 +16,8 @@ import lombok.Data;
 @JsonSubTypes({
         @JsonSubTypes.Type(value = AlpacaBarMessage.class, name = "b"),
         @JsonSubTypes.Type(value = AlpacaErrorMessage.class, name = "error"),
+        @JsonSubTypes.Type(value = AlpacaSuccessMessage.class, name = "success"),
+        @JsonSubTypes.Type(value = AlpacaSubscriptionMessage.class, name = "subscription"),
         @JsonSubTypes.Type(value = AlpacaErrorMessage.class, name = "other")
 })
 public abstract class AlpacaMessage {
