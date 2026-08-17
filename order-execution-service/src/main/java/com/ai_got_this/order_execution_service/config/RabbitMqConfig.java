@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitMqConfig {
     private final RabbitMqProperties rabbitMqProperties;
 
-    public RabbitMqConfig(RabbitMqProperties rabbitMqProperties) {
+    public RabbitMqConfig(RabbitMqProperties rabbitMqProperties, ApplicationConfigurationValidator configurationValidator) {
         this.rabbitMqProperties = rabbitMqProperties;
     }
 
