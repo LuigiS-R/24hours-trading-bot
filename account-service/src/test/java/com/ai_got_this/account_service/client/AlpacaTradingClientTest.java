@@ -45,6 +45,8 @@ class AlpacaTradingClientTest {
                 "AAPL"));
         assertReauthenticationRequired(() -> client.deleteWatchlist(connection, UUID.randomUUID()));
         assertReauthenticationRequired(() -> client.getWatchlists(connection));
+        assertReauthenticationRequired(() -> client.getPositions(connection));
+        assertReauthenticationRequired(() -> client.getOrders(connection));
     }
 
     private AlpacaTradingClient client() {

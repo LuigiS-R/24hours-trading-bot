@@ -8,10 +8,14 @@ import static org.mockito.Mockito.when;
 
 import com.ai_got_this.account_service.client.AlpacaTradingClient;
 import com.ai_got_this.account_service.domain.AlpacaConnection;
+import com.ai_got_this.account_service.domain.OrderProjection;
+import com.ai_got_this.account_service.domain.PositionProjection;
 import com.ai_got_this.account_service.domain.TradingAccountProjection;
 import com.ai_got_this.account_service.domain.Watchlist;
 import com.ai_got_this.account_service.domain.WatchlistEntry;
 import com.ai_got_this.account_service.repository.AlpacaConnectionRepository;
+import com.ai_got_this.account_service.repository.OrderProjectionRepository;
+import com.ai_got_this.account_service.repository.PositionProjectionRepository;
 import com.ai_got_this.account_service.repository.TradingAccountProjectionRepository;
 import com.ai_got_this.account_service.repository.WatchlistEntryRepository;
 import com.ai_got_this.account_service.repository.WatchlistRepository;
@@ -39,6 +43,12 @@ class AccountReconciliationServiceTest {
     private TradingAccountProjectionRepository tradingAccountProjectionRepository;
 
     @Mock
+    private PositionProjectionRepository positionProjectionRepository;
+
+    @Mock
+    private OrderProjectionRepository orderProjectionRepository;
+
+    @Mock
     private WatchlistRepository watchlistRepository;
 
     @Mock
@@ -56,6 +66,9 @@ class AccountReconciliationServiceTest {
                 .thenReturn(Optional.empty());
         when(tradingAccountProjectionRepository.save(any(TradingAccountProjection.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        when(alpacaTradingClient.getPositions(connection)).thenReturn(List.of());
+        when(alpacaTradingClient.getOrders(connection)).thenReturn(List.of());
+        when(positionProjectionRepository.findByConnectionId(connection.getConnectionId())).thenReturn(List.of());
         when(alpacaTradingClient.getWatchlists(connection)).thenReturn(List.of(
                 new AlpacaTradingClient.BrokerWatchlist(
                         brokerWatchlistId,
@@ -98,6 +111,9 @@ class AccountReconciliationServiceTest {
                 .thenReturn(Optional.of(new TradingAccountProjection()));
         when(tradingAccountProjectionRepository.save(any(TradingAccountProjection.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        when(alpacaTradingClient.getPositions(connection)).thenReturn(List.of());
+        when(alpacaTradingClient.getOrders(connection)).thenReturn(List.of());
+        when(positionProjectionRepository.findByConnectionId(connection.getConnectionId())).thenReturn(List.of());
         when(alpacaTradingClient.getWatchlists(connection)).thenReturn(List.of());
         when(watchlistRepository.findByConnectionId(connection.getConnectionId()))
                 .thenReturn(List.of(localWatchlist));
@@ -109,6 +125,59 @@ class AccountReconciliationServiceTest {
         verify(watchlistEntryRepository).deleteAll(List.of(localEntry));
         verify(watchlistRepository).delete(localWatchlist);
         verify(watchlistRepository).flush();
+    }
+
+    @Test
+    void reconcileConnectionReplacesPositionsAndUpsertsOrders() {
+        AlpacaConnection connection = connection();
+        PositionProjection removedPosition = new PositionProjection();
+        removedPosition.setPositionId(UUID.randomUUID());
+        removedPosition.setConnectionId(connection.getConnectionId());
+        removedPosition.setSymbol("MSFT");
+        removedPosition.setQuantity(BigDecimal.ONE);
+        removedPosition.setUpdatedAt(java.time.Instant.now());
+        UUID assetId = UUID.randomUUID();
+        UUID brokerOrderId = UUID.randomUUID();
+
+        when(alpacaTradingClient.getAccount(connection)).thenReturn(account(connection.getAlpacaAccountId()));
+        when(tradingAccountProjectionRepository.findById(connection.getConnectionId()))
+                .thenReturn(Optional.empty());
+        when(tradingAccountProjectionRepository.save(any(TradingAccountProjection.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(alpacaTradingClient.getPositions(connection)).thenReturn(List.of(new AlpacaTradingClient.BrokerPosition(
+                assetId, "AAPL", new BigDecimal("2"), new BigDecimal("1.5"), "long",
+                new BigDecimal("100"), new BigDecimal("200"), new BigDecimal("110"),
+                new BigDecimal("220"), new BigDecimal("20"))));
+        when(positionProjectionRepository.findByConnectionId(connection.getConnectionId()))
+                .thenReturn(List.of(removedPosition));
+        when(positionProjectionRepository.save(any(PositionProjection.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(alpacaTradingClient.getOrders(connection)).thenReturn(List.of(new AlpacaTradingClient.BrokerOrder(
+                brokerOrderId, "client-1", "AAPL", "buy", "market", "day", "filled",
+                new BigDecimal("2"), new BigDecimal("2"), new BigDecimal("101"), new BigDecimal("0.05"),
+                java.time.Instant.parse("2026-08-18T00:00:00Z"),
+                java.time.Instant.parse("2026-08-18T00:01:00Z"),
+                java.time.Instant.parse("2026-08-18T00:01:00Z"), null)));
+        when(orderProjectionRepository.findByAlpacaOrderId(brokerOrderId)).thenReturn(Optional.empty());
+        when(orderProjectionRepository.save(any(OrderProjection.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(alpacaTradingClient.getWatchlists(connection)).thenReturn(List.of());
+        when(watchlistRepository.findByConnectionId(connection.getConnectionId())).thenReturn(List.of());
+
+        service().reconcileConnection(connection);
+
+        ArgumentCaptor<PositionProjection> positionCaptor = ArgumentCaptor.forClass(PositionProjection.class);
+        verify(positionProjectionRepository).save(positionCaptor.capture());
+        assertThat(positionCaptor.getValue().getSymbol()).isEqualTo("AAPL");
+        assertThat(positionCaptor.getValue().getAlpacaAssetId()).isEqualTo(assetId);
+        assertThat(positionCaptor.getValue().getUnrealizedPnl()).isEqualByComparingTo("20");
+        verify(positionProjectionRepository).delete(removedPosition);
+
+        ArgumentCaptor<OrderProjection> orderCaptor = ArgumentCaptor.forClass(OrderProjection.class);
+        verify(orderProjectionRepository).save(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getAlpacaOrderId()).isEqualTo(brokerOrderId);
+        assertThat(orderCaptor.getValue().getStatus()).isEqualTo("filled");
+        assertThat(orderCaptor.getValue().getFees()).isEqualByComparingTo("0.05");
     }
 
     @Test
@@ -150,6 +219,8 @@ class AccountReconciliationServiceTest {
                 alpacaTradingClient,
                 alpacaConnectionRepository,
                 tradingAccountProjectionRepository,
+                positionProjectionRepository,
+                orderProjectionRepository,
                 watchlistRepository,
                 watchlistEntryRepository,
                 connectionFailureService);
