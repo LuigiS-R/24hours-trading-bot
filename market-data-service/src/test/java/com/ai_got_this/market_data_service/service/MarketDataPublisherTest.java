@@ -1,6 +1,7 @@
 package com.ai_got_this.market_data_service.service;
 
 import com.ai_got_this.market_data_service.dto.MarketData;
+import com.ai_got_this.market_data_service.dto.MarketTick;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
@@ -15,7 +16,8 @@ class MarketDataPublisherTest {
     @Test
     void publishesSuppliedMarketDataToSuppliedExchangeAndRoutingKey() {
         RabbitTemplate template = mock(RabbitTemplate.class);
-        MarketData marketData = MarketData.builder().ticket("AAPL").close(100.0).build();
+        MarketTick marketData = new MarketTick(
+                "AAPL", MarketData.builder().ticket("AAPL").close(100.0).build());
 
         new MarketDataPublisher(template).publishMarketData("market-data-exchange", marketData, "market-data");
 

@@ -6,6 +6,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.function.Consumer;
+import java.math.BigDecimal;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -15,7 +16,7 @@ class OrderValidatorTest {
     private final OrderValidator validator = new OrderValidator();
 
     @Test
-    void acceptsASupportedMarketOrder() {
+    void acceptsASupportedLimitOrder() {
         assertTrue(validator.validate(validOrder()).isEmpty());
     }
 
@@ -42,10 +43,11 @@ class OrderValidatorTest {
                 new InvalidOrder(order -> order.setQuantity(-1), "quantity must be greater than zero"),
                 new InvalidOrder(order -> order.setSide(null), "side must be buy or sell"),
                 new InvalidOrder(order -> order.setSide("hold"), "side must be buy or sell"),
-                new InvalidOrder(order -> order.setType(null), "only market orders are supported"),
-                new InvalidOrder(order -> order.setType("limit"), "only market orders are supported"),
-                new InvalidOrder(order -> order.setTimeInForce(null), "timeInForce is missing or unsupported"),
-                new InvalidOrder(order -> order.setTimeInForce("week"), "timeInForce is missing or unsupported")
+                new InvalidOrder(order -> order.setType(null), "only limit orders are supported"),
+                new InvalidOrder(order -> order.setType("market"), "only limit orders are supported"),
+                new InvalidOrder(order -> order.setLimitPrice(null), "limitPrice must be greater than zero"),
+                new InvalidOrder(order -> order.setLimitPrice(BigDecimal.ZERO), "limitPrice must be greater than zero"),
+                new InvalidOrder(order -> order.setLimitPrice(BigDecimal.valueOf(-1)), "limitPrice must be greater than zero")
         );
     }
 
@@ -54,8 +56,8 @@ class OrderValidatorTest {
         order.setSymbol("AAPL");
         order.setQuantity(1);
         order.setSide("buy");
-        order.setType("market");
-        order.setTimeInForce("day");
+        order.setType("limit");
+        order.setLimitPrice(BigDecimal.valueOf(100));
         return order;
     }
 

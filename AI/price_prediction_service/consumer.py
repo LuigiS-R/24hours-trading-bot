@@ -15,11 +15,24 @@ RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "/")
-RABBITMQ_MARKET_TICKS_QUEUE = os.getenv("RABBITMQ_MARKET_TICKS_QUEUE", "market.ticks")
-RABBITMQ_NEWS_SENTIMENT_QUEUE = os.getenv("RABBITMQ_NEWS_SENTIMENT_QUEUE", "news.sentiment")
+# Defaults match the resource names declared by the existing Java publishers.
+RABBITMQ_MARKET_TICKS_QUEUE = os.getenv("RABBITMQ_MARKET_TICKS_QUEUE", "market-data")
+RABBITMQ_NEWS_SENTIMENT_QUEUE = os.getenv("RABBITMQ_NEWS_SENTIMENT_QUEUE", "news-sentiment")
 RABBITMQ_PREDICTIONS_QUEUE = os.getenv("RABBITMQ_PREDICTIONS_QUEUE", "predictions")
 RABBITMQ_PREDICTIONS_EXCHANGE = os.getenv("RABBITMQ_PREDICTIONS_EXCHANGE", "")
 RABBITMQ_QUEUE_DURABLE = os.getenv("RABBITMQ_QUEUE_DURABLE", "true").lower() == "true"
+RABBITMQ_MARKET_DATA_EXCHANGE = os.getenv(
+    "RABBITMQ_MARKET_DATA_EXCHANGE", "market-data-exchange"
+)
+RABBITMQ_MARKET_DATA_ROUTING_KEY = os.getenv(
+    "RABBITMQ_MARKET_DATA_ROUTING_KEY", "market-data"
+)
+RABBITMQ_NEWS_SENTIMENT_EXCHANGE = os.getenv(
+    "RABBITMQ_NEWS_SENTIMENT_EXCHANGE", "news-sentiment-exchange"
+)
+RABBITMQ_NEWS_SENTIMENT_ROUTING_KEY = os.getenv(
+    "RABBITMQ_NEWS_SENTIMENT_ROUTING_KEY", "news-sentiment"
+)
 
 REPO_ID = "andreamena/price-prediction-lstm-stock-news"
 MODEL_FILE = "price_prediction_lstm_v1.keras"
@@ -118,10 +131,32 @@ def main():
     )
     channel = connection.channel()
 
-    # Declare queues from environment-based resource names.
+    # Bind the input queues to the direct exchanges used by the Java Market Data
+    # Service and the News Impact Service. Queue declaration alone does not bind
+    # a queue to a RabbitMQ direct exchange.
+    channel.exchange_declare(
+        exchange=RABBITMQ_MARKET_DATA_EXCHANGE,
+        exchange_type="direct",
+        durable=RABBITMQ_QUEUE_DURABLE,
+    )
+    channel.exchange_declare(
+        exchange=RABBITMQ_NEWS_SENTIMENT_EXCHANGE,
+        exchange_type="direct",
+        durable=RABBITMQ_QUEUE_DURABLE,
+    )
     channel.queue_declare(queue=RABBITMQ_MARKET_TICKS_QUEUE, durable=RABBITMQ_QUEUE_DURABLE)
     channel.queue_declare(queue=RABBITMQ_NEWS_SENTIMENT_QUEUE, durable=RABBITMQ_QUEUE_DURABLE)
     channel.queue_declare(queue=RABBITMQ_PREDICTIONS_QUEUE, durable=RABBITMQ_QUEUE_DURABLE)
+    channel.queue_bind(
+        exchange=RABBITMQ_MARKET_DATA_EXCHANGE,
+        queue=RABBITMQ_MARKET_TICKS_QUEUE,
+        routing_key=RABBITMQ_MARKET_DATA_ROUTING_KEY,
+    )
+    channel.queue_bind(
+        exchange=RABBITMQ_NEWS_SENTIMENT_EXCHANGE,
+        queue=RABBITMQ_NEWS_SENTIMENT_QUEUE,
+        routing_key=RABBITMQ_NEWS_SENTIMENT_ROUTING_KEY,
+    )
 
     def on_market_tick(ch, method, properties, body):
         tick = json.loads(body)

@@ -129,18 +129,11 @@ def run_prediction(ticker: str, headline: str):
         direction = "DOWN"
         numeric_label = 0
 
+    # Contract consumed by Price Prediction Service.
     return {
         "ticker": ticker,
-        "headline": headline,
-        "prediction": {
-            "direction": direction,
-            "label": numeric_label,
-            "confidence": round(confidence, 4),
-        },
-        "model": {
-            "name": "FinBERT-EventRet",
-            "version": "10.0",
-        },
+        "label": numeric_label,
+        "confidence": round(confidence, 4),
     }
 
 
@@ -253,8 +246,8 @@ def rabbitmq_consumer():
                     logger.info(
                         "%s | %s | %s",
                         ticker,
-                        prediction["prediction"]["direction"],
-                        prediction["prediction"]["confidence"],
+                        "UP" if prediction["label"] == 1 else "DOWN",
+                        prediction["confidence"],
                     )
 
                 except Exception:

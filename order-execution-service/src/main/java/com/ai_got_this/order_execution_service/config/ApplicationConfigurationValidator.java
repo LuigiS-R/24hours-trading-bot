@@ -25,7 +25,7 @@ public class ApplicationConfigurationValidator {
     public void validate() {
         List<String> errors = new ArrayList<>();
         validateUrl(alpacaProperties.getStreamUrl(), "alpaca.api.stream-url", "ws", "wss", errors);
-        validateUrl(alpacaProperties.getOrderEndpoint(), "alpaca.api.order-endpoint", "https", null, errors);
+        validateUrl(alpacaProperties.getOrderEndpoint(), "alpaca.api.order-endpoint", "http", "https", errors);
         validateSubscription(errors);
 
         if (!errors.isEmpty()) {

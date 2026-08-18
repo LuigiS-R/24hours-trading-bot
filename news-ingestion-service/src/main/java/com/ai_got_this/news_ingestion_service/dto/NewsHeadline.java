@@ -6,6 +6,6 @@ import lombok.Data;
 @Data
 @Builder
 public class NewsHeadline {
-    private final String ticket;
+    private final String ticker;
     private final String headline;
 }

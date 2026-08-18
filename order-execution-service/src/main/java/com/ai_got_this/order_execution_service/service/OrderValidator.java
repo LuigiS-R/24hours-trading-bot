@@ -1,6 +1,7 @@
 package com.ai_got_this.order_execution_service.service;
 
 import com.ai_got_this.order_execution_service.dto.Order;
+import java.math.BigDecimal;
 import org.springframework.stereotype.Component;
 
 import java.util.Locale;
@@ -12,7 +13,6 @@ import java.util.regex.Pattern;
 public class OrderValidator {
     private static final Pattern SYMBOL_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9./-]*");
     private static final Set<String> SIDES = Set.of("buy", "sell");
-    private static final Set<String> TIME_IN_FORCE_VALUES = Set.of("day", "gtc", "opg", "cls", "ioc", "fok");
 
     public Optional<String> validate(Order order) {
         if (order == null) {
@@ -27,11 +27,11 @@ public class OrderValidator {
         if (!contains(SIDES, order.getSide())) {
             return Optional.of("side must be buy or sell");
         }
-        if (!"market".equals(normalize(order.getType()))) {
-            return Optional.of("only market orders are supported");
+        if (!"limit".equals(normalize(order.getType()))) {
+            return Optional.of("only limit orders are supported");
         }
-        if (!contains(TIME_IN_FORCE_VALUES, order.getTimeInForce())) {
-            return Optional.of("timeInForce is missing or unsupported");
+        if (order.getLimitPrice() == null || order.getLimitPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            return Optional.of("limitPrice must be greater than zero");
         }
         return Optional.empty();
     }

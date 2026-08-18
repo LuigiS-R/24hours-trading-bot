@@ -16,11 +16,13 @@ import org.springframework.web.client.RestTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
 @Slf4j
 public class AlpacaBroker implements Broker{
+    private static final String DEFAULT_TIME_IN_FORCE = "day";
     private RestTemplate restTemplate;
     private ObjectMapper objectMapper;
     private AlpacaProperties alpacaProperties;
@@ -78,9 +80,12 @@ public class AlpacaBroker implements Broker{
         Map<String, String> request = new LinkedHashMap<>();
         request.put("symbol", order.getSymbol());
         request.put("qty", String.valueOf(order.getQuantity()));
-        request.put("side", order.getSide());
-        request.put("type", order.getType());
-        request.put("time_in_force", order.getTimeInForce());
+        request.put("side", order.getSide().trim().toLowerCase(Locale.ROOT));
+        request.put("type", order.getType().trim().toLowerCase(Locale.ROOT));
+        request.put("limit_price", order.getLimitPrice().toPlainString());
+        // Alpaca requires time_in_force. It is intentionally no longer an
+        // inbound order field; Order Execution owns the conservative default.
+        request.put("time_in_force", DEFAULT_TIME_IN_FORCE);
         return request;
     }
 }

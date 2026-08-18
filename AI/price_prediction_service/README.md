@@ -40,18 +40,22 @@ All RabbitMQ settings are environment based. The defaults are:
 | `RABBITMQ_USER` | `guest` | Broker user |
 | `RABBITMQ_PASS` | `guest` | Broker password |
 | `RABBITMQ_VHOST` | `/` | Broker virtual host |
-| `RABBITMQ_MARKET_TICKS_QUEUE` | `market.ticks` | Market-bar input queue |
-| `RABBITMQ_NEWS_SENTIMENT_QUEUE` | `news.sentiment` | News-sentiment input queue |
+| `RABBITMQ_MARKET_TICKS_QUEUE` | `market-data` | Market-bar input queue (matches Market Data Service) |
+| `RABBITMQ_NEWS_SENTIMENT_QUEUE` | `news-sentiment` | News-sentiment input queue (matches News Impact Service) |
 | `RABBITMQ_PREDICTIONS_QUEUE` | `predictions` | Prediction destination/routing key |
 | `RABBITMQ_PREDICTIONS_EXCHANGE` | empty string | Prediction exchange (the default exchange) |
 | `RABBITMQ_QUEUE_DURABLE` | `true` | Whether declared queues are durable |
+| `RABBITMQ_MARKET_DATA_EXCHANGE` | `market-data-exchange` | Direct exchange published by Market Data Service |
+| `RABBITMQ_MARKET_DATA_ROUTING_KEY` | `market-data` | Market-data exchange binding key |
+| `RABBITMQ_NEWS_SENTIMENT_EXCHANGE` | `news-sentiment-exchange` | Direct exchange published by News Impact Service |
+| `RABBITMQ_NEWS_SENTIMENT_ROUTING_KEY` | `news-sentiment` | News-sentiment exchange binding key |
 
 ## Event flow
 
 The consumer receives the following messages:
 
-- `market.ticks`: `{ "ticker": "AAPL", "bar": { ...market features... } }`
-- `news.sentiment`: `{ "ticker": "AAPL", "label": 1, "confidence": 0.813 }`
+- `market-data`: `{ "ticker": "AAPL", "bar": { ...market features... } }`
+- `news-sentiment`: `{ "ticker": "AAPL", "label": 1, "confidence": 0.813 }`
 
 Price bars are retained per ticker in a fixed-size window of 20. Once the
 window is full, every incoming bar discards the oldest bar and produces a new
@@ -70,6 +74,9 @@ the configured prediction destination:
 ```
 
 Both input consumers use RabbitMQ automatic acknowledgement (`auto_ack=True`).
+At startup, the worker declares and binds both input queues to the matching
+direct exchanges. The publisher payload schemas must still match the documented
+input shapes below.
 
 ## Role in the System
 

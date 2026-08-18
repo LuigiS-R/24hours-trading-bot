@@ -85,7 +85,7 @@ public class AlpacaWebSocketHandler extends TextWebSocketHandler{
                 List<String> relatedSymbols = alpacaNewsMessage.getSymbols();
                 for(String symbol: relatedSymbols){
                     NewsHeadline newsHeadline = NewsHeadline.builder()
-                            .ticket(symbol)
+                            .ticker(symbol)
                             .headline(alpacaNewsMessage.getHeadline())
                             .build();
 

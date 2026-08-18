@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Map;
+import java.math.BigDecimal;
 
 class AlpacaBrokerTest {
     private final RestTemplate restTemplate = mock(RestTemplate.class);
@@ -43,7 +44,8 @@ class AlpacaBrokerTest {
         order.setSymbol("AAPL");
         order.setQuantity(3);
         order.setSide("buy");
-        order.setTimeInForce("day");
+        order.setType("limit");
+        order.setLimitPrice(BigDecimal.valueOf(123.45));
         broker = new AlpacaBroker(restTemplate, new ObjectMapper(), properties);
     }
 
@@ -60,7 +62,8 @@ class AlpacaBrokerTest {
                 "symbol", "AAPL",
                 "qty", "3",
                 "side", "buy",
-                "type", "market",
+                "type", "limit",
+                "limit_price", "123.45",
                 "time_in_force", "day"
         ), request.getValue().getBody());
         assertEquals("key", request.getValue().getHeaders().getFirst("APCA-API-KEY-ID"));

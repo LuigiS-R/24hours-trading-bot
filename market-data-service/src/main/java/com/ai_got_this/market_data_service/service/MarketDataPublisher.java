@@ -1,6 +1,7 @@
 package com.ai_got_this.market_data_service.service;
 
 import com.ai_got_this.market_data_service.dto.MarketData;
+import com.ai_got_this.market_data_service.dto.MarketTick;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
@@ -12,7 +13,7 @@ public class MarketDataPublisher {
         this.rabbitTemplate = rabbitTemplate;
     }
 
-    public void publishMarketData(String exchange, MarketData marketData, String routingKey) {
-        rabbitTemplate.convertAndSend(exchange, routingKey, marketData);
+    public void publishMarketData(String exchange, MarketTick marketTick, String routingKey) {
+        rabbitTemplate.convertAndSend(exchange, routingKey, marketTick);
     }
 }

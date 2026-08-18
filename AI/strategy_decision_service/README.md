@@ -17,7 +17,7 @@ All RabbitMQ connection and resource names are environment-configured:
 | `RABBITMQ_PASS` | `guest` | RabbitMQ password |
 | `RABBITMQ_VHOST` | `/` | RabbitMQ virtual host |
 | `RABBITMQ_PREDICTIONS_QUEUE` | `predictions` | Queue consumed for model predictions |
-| `RABBITMQ_APPROVED_ORDERS_QUEUE` | `approved.orders` | Queue receiving approved orders |
+| `RABBITMQ_APPROVED_ORDERS_QUEUE` | `orders.approved` | Queue receiving approved orders (matches Order Execution Service) |
 
 Portfolio retrieval is separately configured:
 

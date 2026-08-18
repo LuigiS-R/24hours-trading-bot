@@ -7,6 +7,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import org.slf4j.LoggerFactory;
+import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -50,8 +51,8 @@ class ListenerServiceTest {
         order.setSymbol("AAPL");
         order.setQuantity(1);
         order.setSide("buy");
-        order.setType("market");
-        order.setTimeInForce("day");
+        order.setType("limit");
+        order.setLimitPrice(BigDecimal.valueOf(100));
         return order;
     }
 

@@ -12,6 +12,14 @@ class ApplicationConfigurationValidatorTest {
     }
 
     @Test
+    void acceptsAnHttpOrderEndpointForALocalBroker() {
+        AlpacaProperties alpacaProperties = validAlpacaProperties();
+        alpacaProperties.setOrderEndpoint("http://127.0.0.1:18080/v2/orders");
+
+        assertDoesNotThrow(() -> new ApplicationConfigurationValidator(alpacaProperties, validRabbitMqProperties()).validate());
+    }
+
+    @Test
     void rejectsAnInvalidWebSocketUrlBeforeTheApplicationCanStart() {
         AlpacaProperties alpacaProperties = validAlpacaProperties();
         alpacaProperties.setStreamUrl("https://broker.invalid/stream");

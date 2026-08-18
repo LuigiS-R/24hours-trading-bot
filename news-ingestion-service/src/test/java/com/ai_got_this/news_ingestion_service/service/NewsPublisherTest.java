@@ -11,7 +11,7 @@ class NewsPublisherTest {
     void publishesTheOriginalHeadlineToTheRequestedExchangeAndRoutingKey() {
         RecordingRabbitTemplate rabbitTemplate = new RecordingRabbitTemplate();
         NewsPublisher publisher = new NewsPublisher(rabbitTemplate);
-        NewsHeadline headline = NewsHeadline.builder().ticket("NVDA").headline("Earnings rise").build();
+        NewsHeadline headline = NewsHeadline.builder().ticker("NVDA").headline("Earnings rise").build();
         publisher.publishNews("financial-news-exchange", headline, "financial-news");
         assertEquals("financial-news-exchange", rabbitTemplate.exchange);
         assertEquals("financial-news", rabbitTemplate.routingKey);

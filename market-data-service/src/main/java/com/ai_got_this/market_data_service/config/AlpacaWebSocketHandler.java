@@ -7,6 +7,7 @@ import com.ai_got_this.market_data_service.dto.AlpacaSubscriptionMessage;
 import com.ai_got_this.market_data_service.dto.AlpacaSuccessMessage;
 import com.ai_got_this.market_data_service.dto.AlpacaUnknownMessage;
 import com.ai_got_this.market_data_service.dto.MarketData;
+import com.ai_got_this.market_data_service.dto.MarketTick;
 import com.ai_got_this.market_data_service.exception.ErrorMarketDataMessageException;
 import com.ai_got_this.market_data_service.service.MarketDataPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -104,7 +105,10 @@ public class AlpacaWebSocketHandler extends TextWebSocketHandler {
                         .volume(barMessage.getVolume())
                         .build();
 
-                marketDataPublisher.publishMarketData("market-data-exchange", marketData, "market-data");
+                marketDataPublisher.publishMarketData(
+                        "market-data-exchange",
+                        new MarketTick(barMessage.getSymbol(), marketData),
+                        "market-data");
             }
 
             if (alpacaMessage instanceof AlpacaUnknownMessage unknownMessage) {

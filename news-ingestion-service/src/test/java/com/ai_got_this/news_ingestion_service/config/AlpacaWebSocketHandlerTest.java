@@ -71,16 +71,16 @@ class AlpacaWebSocketHandlerTest {
     void validNewsPublishesOneHeadlinePerSymbolWithExactBrokerContract() {
         handler.receive("[{\"T\":\"n\",\"id\":\"evt-1\",\"headline\":\"삼성전자 📈 beats estimates\",\"symbols\":[\"005930\",\"AAPL\"]}]");
         assertEquals(List.of(
-                new Publication("financial-news-exchange", NewsHeadline.builder().ticket("005930").headline("삼성전자 📈 beats estimates").build(), "financial-news"),
-                new Publication("financial-news-exchange", NewsHeadline.builder().ticket("AAPL").headline("삼성전자 📈 beats estimates").build(), "financial-news")), newsPublisher.publications);
+                new Publication("financial-news-exchange", NewsHeadline.builder().ticker("005930").headline("삼성전자 📈 beats estimates").build(), "financial-news"),
+                new Publication("financial-news-exchange", NewsHeadline.builder().ticker("AAPL").headline("삼성전자 📈 beats estimates").build(), "financial-news")), newsPublisher.publications);
     }
 
     @Test
     void everyArrayElementIsProcessedInOrder() {
         handler.receive("[{\"T\":\"n\",\"headline\":\"first\",\"symbols\":[\"AAA\"]},{\"T\":\"n\",\"headline\":\"second\",\"symbols\":[\"BBB\"]}]");
         assertEquals(List.of(
-                new Publication("financial-news-exchange", NewsHeadline.builder().ticket("AAA").headline("first").build(), "financial-news"),
-                new Publication("financial-news-exchange", NewsHeadline.builder().ticket("BBB").headline("second").build(), "financial-news")), newsPublisher.publications);
+                new Publication("financial-news-exchange", NewsHeadline.builder().ticker("AAA").headline("first").build(), "financial-news"),
+                new Publication("financial-news-exchange", NewsHeadline.builder().ticker("BBB").headline("second").build(), "financial-news")), newsPublisher.publications);
     }
 
     @Test
@@ -94,14 +94,14 @@ class AlpacaWebSocketHandlerTest {
     @Test
     void headlineAndSymbolAreForwardedWithoutNormalizationOrValidation() {
         handler.receive("[{\"T\":\"n\",\"headline\":\"  headline with spaces  \",\"symbols\":[\" aapl \"]}]");
-        assertEquals(" aapl ", newsPublisher.publications.getFirst().news().getTicket());
+        assertEquals(" aapl ", newsPublisher.publications.getFirst().news().getTicker());
         assertEquals("  headline with spaces  ", newsPublisher.publications.getFirst().news().getHeadline());
     }
 
     @Test
     void unknownFieldsOnNewsAreIgnoredAndKnownFieldsArePublished() {
         handler.receive("[{\"T\":\"n\",\"headline\":\"new provider field\",\"symbols\":[\"AAPL\"],\"new_field\":true}]");
-        assertEquals(List.of(new Publication("financial-news-exchange", NewsHeadline.builder().ticket("AAPL").headline("new provider field").build(), "financial-news")), newsPublisher.publications);
+        assertEquals(List.of(new Publication("financial-news-exchange", NewsHeadline.builder().ticker("AAPL").headline("new provider field").build(), "financial-news")), newsPublisher.publications);
     }
 
     @ParameterizedTest
@@ -150,7 +150,7 @@ class AlpacaWebSocketHandlerTest {
         newsPublisher.failNext = true;
         handler.receive("[{\"T\":\"n\",\"headline\":\"first\",\"symbols\":[\"AAA\"]}]");
         handler.receive("[{\"T\":\"n\",\"headline\":\"second\",\"symbols\":[\"BBB\"]}]");
-        assertEquals(List.of(new Publication("financial-news-exchange", NewsHeadline.builder().ticket("BBB").headline("second").build(), "financial-news")), newsPublisher.publications);
+        assertEquals(List.of(new Publication("financial-news-exchange", NewsHeadline.builder().ticker("BBB").headline("second").build(), "financial-news")), newsPublisher.publications);
     }
 
     @Test
@@ -159,7 +159,7 @@ class AlpacaWebSocketHandlerTest {
 
         handler.receive("[{\"T\":\"n\",\"headline\":\"first\",\"symbols\":[\"AAA\"]},{\"T\":\"n\",\"headline\":\"second\",\"symbols\":[\"BBB\"]}]");
 
-        assertEquals(List.of(new Publication("financial-news-exchange", NewsHeadline.builder().ticket("BBB").headline("second").build(), "financial-news")), newsPublisher.publications);
+        assertEquals(List.of(new Publication("financial-news-exchange", NewsHeadline.builder().ticker("BBB").headline("second").build(), "financial-news")), newsPublisher.publications);
     }
 
     private record Publication(String exchange, NewsHeadline news, String routingKey) { }

@@ -1,6 +1,7 @@
 package com.ai_got_this.market_data_service.config;
 
 import com.ai_got_this.market_data_service.dto.MarketData;
+import com.ai_got_this.market_data_service.dto.MarketTick;
 import com.ai_got_this.market_data_service.service.MarketDataPublisher;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -74,10 +75,10 @@ class AlpacaWebSocketHandlerTest {
     void validBarIsNormalizedAndPublishedOnceToConfiguredBrokerRoute() {
         deliver("[{\"T\":\"b\",\"S\":\"AAPL\",\"o\":100.25,\"h\":105.5,\"l\":99.75,\"c\":104.0,\"v\":123456,\"n\":17,\"t\":\"2026-08-17T00:00:00Z\"}]");
 
-        ArgumentCaptor<MarketData> marketData = ArgumentCaptor.forClass(MarketData.class);
+        ArgumentCaptor<MarketTick> marketData = ArgumentCaptor.forClass(MarketTick.class);
         verify(publisher).publishMarketData(eq("market-data-exchange"), marketData.capture(), eq("market-data"));
-        assertEquals(MarketData.builder().ticket("AAPL").open(100.25).high(105.5).low(99.75)
-                .close(104.0).volume(123456L).build(), marketData.getValue());
+        assertEquals(new MarketTick("AAPL", MarketData.builder().ticket("AAPL").open(100.25).high(105.5).low(99.75)
+                .close(104.0).volume(123456L).build()), marketData.getValue());
     }
 
     @Test
@@ -100,40 +101,40 @@ class AlpacaWebSocketHandlerTest {
     @Test
     void publisherFailureIsContainedSoOneBadEventDoesNotEscapeWebSocketCallback() {
         doThrow(new IllegalStateException("broker unavailable")).when(publisher)
-                .publishMarketData(eq("market-data-exchange"), any(MarketData.class), eq("market-data"));
+                .publishMarketData(eq("market-data-exchange"), any(MarketTick.class), eq("market-data"));
 
         deliver("[{\"T\":\"b\",\"S\":\"AAPL\",\"o\":1,\"h\":2,\"l\":1,\"c\":2,\"v\":1}]");
-        verify(publisher).publishMarketData(eq("market-data-exchange"), any(MarketData.class), eq("market-data"));
+        verify(publisher).publishMarketData(eq("market-data-exchange"), any(MarketTick.class), eq("market-data"));
     }
 
     @Test
     void failurePublishingOneBarDoesNotPreventLaterBarsInTheSameFrame() {
         doThrow(new IllegalStateException("broker unavailable")).when(publisher)
-                .publishMarketData(eq("market-data-exchange"), org.mockito.ArgumentMatchers.argThat(data -> "AAPL".equals(data.getTicket())), eq("market-data"));
+                .publishMarketData(eq("market-data-exchange"), org.mockito.ArgumentMatchers.argThat(data -> "AAPL".equals(data.ticker())), eq("market-data"));
 
         deliver("[{\"T\":\"b\",\"S\":\"AAPL\",\"o\":1,\"h\":2,\"l\":1,\"c\":2,\"v\":1},{\"T\":\"b\",\"S\":\"MSFT\",\"o\":3,\"h\":4,\"l\":3,\"c\":4,\"v\":2}]");
 
-        verify(publisher, org.mockito.Mockito.times(2)).publishMarketData(eq("market-data-exchange"), any(MarketData.class), eq("market-data"));
+        verify(publisher, org.mockito.Mockito.times(2)).publishMarketData(eq("market-data-exchange"), any(MarketTick.class), eq("market-data"));
     }
 
     @Test
     void everyBarInProviderBatchIsProcessedInOrder() {
         deliver("[{\"T\":\"b\",\"S\":\"AAPL\",\"o\":1,\"h\":2,\"l\":1,\"c\":2,\"v\":1},{\"T\":\"b\",\"S\":\"MSFT\",\"o\":3,\"h\":4,\"l\":3,\"c\":4,\"v\":2}]");
 
-        ArgumentCaptor<MarketData> marketData = ArgumentCaptor.forClass(MarketData.class);
+        ArgumentCaptor<MarketTick> marketData = ArgumentCaptor.forClass(MarketTick.class);
         verify(publisher, org.mockito.Mockito.times(2)).publishMarketData(eq("market-data-exchange"), marketData.capture(), eq("market-data"));
-        assertEquals(java.util.List.of("AAPL", "MSFT"), marketData.getAllValues().stream().map(MarketData::getTicket).toList());
+        assertEquals(java.util.List.of("AAPL", "MSFT"), marketData.getAllValues().stream().map(MarketTick::ticker).toList());
     }
 
     @Test
     void invalidBarValuesAreForwardedWithoutValidationByCurrentImplementation() {
         deliver("[{\"T\":\"b\",\"S\":\"  aapl  \",\"o\":-1,\"h\":0,\"l\":10,\"c\":-2,\"v\":-1}]");
 
-        ArgumentCaptor<MarketData> marketData = ArgumentCaptor.forClass(MarketData.class);
+        ArgumentCaptor<MarketTick> marketData = ArgumentCaptor.forClass(MarketTick.class);
         verify(publisher).publishMarketData(eq("market-data-exchange"), marketData.capture(), eq("market-data"));
-        assertEquals("  aapl  ", marketData.getValue().getTicket());
-        assertEquals(-1.0, marketData.getValue().getOpen());
-        assertEquals(-1L, marketData.getValue().getVolume());
+        assertEquals("  aapl  ", marketData.getValue().ticker());
+        assertEquals(-1.0, marketData.getValue().bar().getOpen());
+        assertEquals(-1L, marketData.getValue().bar().getVolume());
     }
 
     private void deliver(String payload) {
