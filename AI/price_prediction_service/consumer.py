@@ -1,6 +1,8 @@
 import os
 import json
 import time
+from collections import defaultdict, deque
+
 import pika
 import numpy as np
 import tensorflow as tf
@@ -12,6 +14,12 @@ RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
+RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "/")
+RABBITMQ_MARKET_TICKS_QUEUE = os.getenv("RABBITMQ_MARKET_TICKS_QUEUE", "market.ticks")
+RABBITMQ_NEWS_SENTIMENT_QUEUE = os.getenv("RABBITMQ_NEWS_SENTIMENT_QUEUE", "news.sentiment")
+RABBITMQ_PREDICTIONS_QUEUE = os.getenv("RABBITMQ_PREDICTIONS_QUEUE", "predictions")
+RABBITMQ_PREDICTIONS_EXCHANGE = os.getenv("RABBITMQ_PREDICTIONS_EXCHANGE", "")
+RABBITMQ_QUEUE_DURABLE = os.getenv("RABBITMQ_QUEUE_DURABLE", "true").lower() == "true"
 
 REPO_ID = "andreamena/price-prediction-lstm-stock-news"
 MODEL_FILE = "price_prediction_lstm_v1.keras"
@@ -32,8 +40,10 @@ news_scaler = joblib.load(news_scaler_path)
 with open(metadata_path, "r") as f:
     metadata = json.load(f)
 
-# In-memory storage for rolling price sequences and latest news per ticker
-price_buffer = {}  # { "AAPL": [bar1, bar2, ... bar20] }
+# In-memory storage for rolling price sequences and latest news per ticker.
+# Each deque discards its oldest item as soon as a new bar exceeds the window.
+SEQUENCE_LENGTH = metadata.get("sequence_length", 20)
+price_buffer = defaultdict(lambda: deque(maxlen=SEQUENCE_LENGTH))
 latest_news = {}   # { "AAPL": {"sentiment": 1, "confidence": 0.85, "timestamp": 1723000000} }
 
 def apply_sentiment_decay(sentiment_data):
@@ -54,20 +64,25 @@ def apply_sentiment_decay(sentiment_data):
     return news_sentiment, impact_confidence, weighted_news_impact
 
 def process_prediction(ticker, channel):
-    """Runs LSTM inference when 20 bars are buffered and publishes prediction."""
-    bars = price_buffer.get(ticker, [])
-    if len(bars) < 20:
-        return  # Wait until full 20-bar sequence is collected
+    """Runs LSTM inference when a complete price window is buffered."""
+    bars = price_buffer.get(ticker)
+    if bars is None or len(bars) < SEQUENCE_LENGTH:
+        return
 
     price_features = metadata["price_features"]
-    price_array = np.array([[bar[feat] for feat in price_features] for bar in bars[-20:]], dtype=np.float32)
+    price_array = np.array(
+        [[bar[feature] for feature in price_features] for bar in bars],
+        dtype=np.float32,
+    )
     
     # Apply time-decay to news
     s_val, s_conf, s_weighted = apply_sentiment_decay(latest_news.get(ticker))
     news_array = np.array([[s_val, s_conf, s_weighted]], dtype=np.float32)
 
     # Scale inputs
-    price_scaled = price_scaler.transform(price_array).reshape(1, 20, len(price_features))
+    price_scaled = price_scaler.transform(price_array).reshape(
+        1, SEQUENCE_LENGTH, len(price_features)
+    )
     news_scaled = news_scaler.transform(news_array)
 
     # Predict
@@ -83,30 +98,36 @@ def process_prediction(ticker, channel):
         "timestamp": time.time()
     }
 
-    # Publish to predictions queue
+    # Publish to the configured prediction destination.
     channel.basic_publish(
-        exchange="",
-        routing_key="predictions",
+        exchange=RABBITMQ_PREDICTIONS_EXCHANGE,
+        routing_key=RABBITMQ_PREDICTIONS_QUEUE,
         body=json.dumps(prediction_payload)
     )
     print(f" [x] Published prediction for {ticker}: {direction} ({confidence*100:.1f}%)")
 
 def main():
     credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, port=RABBITMQ_PORT, credentials=credentials))
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(
+            host=RABBITMQ_HOST,
+            port=RABBITMQ_PORT,
+            virtual_host=RABBITMQ_VHOST,
+            credentials=credentials,
+        )
+    )
     channel = connection.channel()
 
-    # Declare queues
-    channel.queue_declare(queue="market.ticks", durable=True)
-    channel.queue_declare(queue="news.sentiment", durable=True)
-    channel.queue_declare(queue="predictions", durable=True)
+    # Declare queues from environment-based resource names.
+    channel.queue_declare(queue=RABBITMQ_MARKET_TICKS_QUEUE, durable=RABBITMQ_QUEUE_DURABLE)
+    channel.queue_declare(queue=RABBITMQ_NEWS_SENTIMENT_QUEUE, durable=RABBITMQ_QUEUE_DURABLE)
+    channel.queue_declare(queue=RABBITMQ_PREDICTIONS_QUEUE, durable=RABBITMQ_QUEUE_DURABLE)
 
     def on_market_tick(ch, method, properties, body):
         tick = json.loads(body)
         ticker = tick["ticker"]
-        price_buffer.setdefault(ticker, []).append(tick["bar"])
+        price_buffer[ticker].append(tick["bar"])
         process_prediction(ticker, ch)
-        ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def on_news_sentiment(ch, method, properties, body):
         news = json.loads(body)
@@ -117,12 +138,24 @@ def main():
             "timestamp": time.time()
         }
         print(f" [*] Updated sentiment for {ticker}")
-        ch.basic_ack(delivery_tag=method.delivery_tag)
+        process_prediction(ticker, ch)
 
-    channel.basic_consume(queue="market.ticks", on_message_callback=on_market_tick)
-    channel.basic_consume(queue="news.sentiment", on_message_callback=on_news_sentiment)
+    channel.basic_consume(
+        queue=RABBITMQ_MARKET_TICKS_QUEUE,
+        on_message_callback=on_market_tick,
+        auto_ack=True,
+    )
+    channel.basic_consume(
+        queue=RABBITMQ_NEWS_SENTIMENT_QUEUE,
+        on_message_callback=on_news_sentiment,
+        auto_ack=True,
+    )
 
-    print(" [*] Prediction Service listening on 'market.ticks' & 'news.sentiment'. Press CTRL+C to exit.")
+    print(
+        " [*] Prediction Service listening on "
+        f"'{RABBITMQ_MARKET_TICKS_QUEUE}' & '{RABBITMQ_NEWS_SENTIMENT_QUEUE}'. "
+        "Press CTRL+C to exit."
+    )
     try:
         channel.start_consuming()
     except KeyboardInterrupt:
