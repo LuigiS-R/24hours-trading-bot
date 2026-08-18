@@ -1,0 +1,31 @@
+name: trading-bot-integration
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    environment:
+      RABBITMQ_DEFAULT_USER: it_user
+      RABBITMQ_DEFAULT_PASS: it_password_only
+      RABBITMQ_DEFAULT_VHOST: integration
+    ports:
+      - "15673:15672"
+      - "5673:5672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: accounts_it
+      POSTGRES_USER: accounts_it
+      POSTGRES_PASSWORD: accounts_password_only
+    ports:
+      - "15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U accounts_it -d accounts_it"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
