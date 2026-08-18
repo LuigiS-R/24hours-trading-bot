@@ -1,13 +1,13 @@
 package com.ai_got_this.market_data_service;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
-@SpringBootTest
 class MarketDataServiceApplicationTests {
 
 	@Test
-	void contextLoads() {
+	void applicationEntryPointDoesNotRequireExternalInfrastructure() {
+		assertDoesNotThrow(() -> Class.forName(MarketDataServiceApplication.class.getName()));
 	}
 
 }

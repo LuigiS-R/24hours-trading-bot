@@ -6,14 +6,11 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.web.socket.client.WebSocketConnectionManager;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-
 @Configuration
 public class WebSocketClientConfig {
     private AlpacaProperties alpacaProperties;
 
-    public WebSocketClientConfig(AlpacaProperties alpacaProperties) {
+    public WebSocketClientConfig(AlpacaProperties alpacaProperties, ApplicationConfigurationValidator configurationValidator) {
         this.alpacaProperties = alpacaProperties;
     }
 
@@ -34,10 +31,5 @@ public class WebSocketClientConfig {
         manager.setAutoStartup(true);
         manager.setHeaders(headers);
         return manager;
-    }
-
-    @Bean
-    public ScheduledExecutorService scheduler() {
-        return Executors.newSingleThreadScheduledExecutor();
     }
 }
