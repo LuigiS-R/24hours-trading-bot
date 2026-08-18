@@ -50,7 +50,18 @@ public class AlpacaWebSocketHandler extends TextWebSocketHandler{
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message){
         try{
-            AlpacaMessage alpacaMessage = objectMapper.readValue(message.getPayload(), AlpacaMessage[].class)[0];
+            AlpacaMessage[] alpacaMessages = objectMapper.readValue(message.getPayload(), AlpacaMessage[].class);
+            for (AlpacaMessage alpacaMessage : alpacaMessages) {
+                processMessage(alpacaMessage);
+            }
+        }
+        catch(Exception e){
+            log.error(e.getMessage());
+        }
+    }
+
+    private void processMessage(AlpacaMessage alpacaMessage) {
+        try {
 
             if (alpacaMessage instanceof AlpacaErrorMessage errorMessage) {
                 Integer errorCode = errorMessage.getCode();

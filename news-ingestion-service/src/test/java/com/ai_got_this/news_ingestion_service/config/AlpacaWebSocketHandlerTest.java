@@ -76,9 +76,11 @@ class AlpacaWebSocketHandlerTest {
     }
 
     @Test
-    void onlyFirstArrayElementIsProcessedAsImplemented() {
+    void everyArrayElementIsProcessedInOrder() {
         handler.receive("[{\"T\":\"n\",\"headline\":\"first\",\"symbols\":[\"AAA\"]},{\"T\":\"n\",\"headline\":\"second\",\"symbols\":[\"BBB\"]}]");
-        assertEquals(List.of(new Publication("financial-news-exchange", NewsHeadline.builder().ticket("AAA").headline("first").build(), "financial-news")), newsPublisher.publications);
+        assertEquals(List.of(
+                new Publication("financial-news-exchange", NewsHeadline.builder().ticket("AAA").headline("first").build(), "financial-news"),
+                new Publication("financial-news-exchange", NewsHeadline.builder().ticket("BBB").headline("second").build(), "financial-news")), newsPublisher.publications);
     }
 
     @Test
@@ -148,6 +150,15 @@ class AlpacaWebSocketHandlerTest {
         newsPublisher.failNext = true;
         handler.receive("[{\"T\":\"n\",\"headline\":\"first\",\"symbols\":[\"AAA\"]}]");
         handler.receive("[{\"T\":\"n\",\"headline\":\"second\",\"symbols\":[\"BBB\"]}]");
+        assertEquals(List.of(new Publication("financial-news-exchange", NewsHeadline.builder().ticket("BBB").headline("second").build(), "financial-news")), newsPublisher.publications);
+    }
+
+    @Test
+    void publisherFailureDoesNotPreventLaterMessagesInTheSameFrameFromPublishing() {
+        newsPublisher.failNext = true;
+
+        handler.receive("[{\"T\":\"n\",\"headline\":\"first\",\"symbols\":[\"AAA\"]},{\"T\":\"n\",\"headline\":\"second\",\"symbols\":[\"BBB\"]}]");
+
         assertEquals(List.of(new Publication("financial-news-exchange", NewsHeadline.builder().ticket("BBB").headline("second").build(), "financial-news")), newsPublisher.publications);
     }
 
