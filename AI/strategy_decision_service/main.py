@@ -1,25 +1,44 @@
 import os
 import json
+
+import httpx
 import pika
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
+RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "/")
+RABBITMQ_PREDICTIONS_QUEUE = os.getenv("RABBITMQ_PREDICTIONS_QUEUE", "predictions")
+RABBITMQ_APPROVED_ORDERS_QUEUE = os.getenv(
+    "RABBITMQ_APPROVED_ORDERS_QUEUE", "approved.orders"
+)
+PORTFOLIO_SERVICE_ENDPOINT = os.getenv(
+    "PORTFOLIO_SERVICE_ENDPOINT", "http://127.0.0.1:8003/portfolio"
+)
+PORTFOLIO_SERVICE_TIMEOUT_SECONDS = float(
+    os.getenv("PORTFOLIO_SERVICE_TIMEOUT_SECONDS", "5.0")
+)
 
 # Decision Parameters
 CONFIDENCE_THRESHOLD = 0.65   # Only trade if model is >= 65% confident
 MAX_PORTFOLIO_RISK_PCT = 0.05 # Max 5% of total capital per trade
 
-# Mock local portfolio state (or fetch via Portfolio Service RPC)
-portfolio = {
-    "cash": 10000.0,
-    "positions": {
-        "AAPL": {"quantity": 0, "avg_price": 0.0}
-    }
-}
+def fetch_portfolio():
+    """Retrieve the current portfolio snapshot from the portfolio service."""
+    try:
+        response = httpx.get(
+            PORTFOLIO_SERVICE_ENDPOINT,
+            timeout=PORTFOLIO_SERVICE_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        return response.json()
+    except (httpx.HTTPError, ValueError) as error:
+        print(f" [Portfolio] Unable to retrieve portfolio: {error}")
+        return None
 
-def evaluate_trading_decision(prediction, current_price=180.0):
+
+def evaluate_trading_decision(prediction, portfolio, current_price=180.0):
     """
     Improved decision rules:
     - Checks confidence threshold to avoid low-certainty trades.
@@ -71,31 +90,50 @@ def evaluate_trading_decision(prediction, current_price=180.0):
 
 def main():
     credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST, port=RABBITMQ_PORT, credentials=credentials))
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(
+            host=RABBITMQ_HOST,
+            port=RABBITMQ_PORT,
+            virtual_host=RABBITMQ_VHOST,
+            credentials=credentials,
+        )
+    )
     channel = connection.channel()
 
-    channel.queue_declare(queue="predictions", durable=True)
-    channel.queue_declare(queue="approved.orders", durable=True)
+    channel.queue_declare(queue=RABBITMQ_PREDICTIONS_QUEUE, durable=True)
+    channel.queue_declare(queue=RABBITMQ_APPROVED_ORDERS_QUEUE, durable=True)
 
     def on_prediction_received(ch, method, properties, body):
         prediction = json.loads(body)
         print(f" [*] Received prediction: {prediction}")
-        
-        decision = evaluate_trading_decision(prediction)
+
+        portfolio = fetch_portfolio()
+        if portfolio is None:
+            print(" [Decision] Portfolio unavailable. Deferring prediction for retry.")
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+            return
+
+        decision = evaluate_trading_decision(prediction, portfolio)
         
         if decision:
             # Publish order to execution service
             channel.basic_publish(
                 exchange="",
-                routing_key="approved.orders",
+                routing_key=RABBITMQ_APPROVED_ORDERS_QUEUE,
                 body=json.dumps(decision)
             )
             print(f" [✓] Approved Order Published: {decision}")
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
-    channel.basic_consume(queue="predictions", on_message_callback=on_prediction_received)
-    print(" [*] Strategy & Decision Engine listening on 'predictions'. Press CTRL+C to exit.")
+    channel.basic_consume(
+        queue=RABBITMQ_PREDICTIONS_QUEUE,
+        on_message_callback=on_prediction_received,
+    )
+    print(
+        " [*] Strategy & Decision Engine listening on "
+        f"'{RABBITMQ_PREDICTIONS_QUEUE}' (vhost '{RABBITMQ_VHOST}'). Press CTRL+C to exit."
+    )
     
     try:
         channel.start_consuming()
