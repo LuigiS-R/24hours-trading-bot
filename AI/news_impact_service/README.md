@@ -2,7 +2,7 @@
 
 ## Role in the System
 
-This service is responsible for the News Impact Analysis module of the 24-Hour Trading Bot. It receives a stock ticker and news headline from the backend, predicts the expected market direction using the fine-tuned FinBERT model, and returns the prediction confidence for use in the trading decision pipeline.
+This service is responsible for the News Impact Analysis module of the 24-Hour Trading Bot. It consumes a stock ticker and news headline from RabbitMQ, predicts the expected market direction using the fine-tuned FinBERT model, and publishes the prediction to RabbitMQ for use in the trading decision pipeline.
 
 ## Model
 
@@ -32,26 +32,41 @@ The service will be available at:
 http://127.0.0.1:8000/docs
 ```
 
-## API
+## RabbitMQ configuration
 
-### POST `/predict`
+All RabbitMQ connection and topology values are configurable through environment variables.
 
-### Example Request
+| Variable | Default |
+| --- | --- |
+| `RABBITMQ_HOST` | `localhost` |
+| `RABBITMQ_PORT` | `5672` |
+| `RABBITMQ_USER` | `guest` |
+| `RABBITMQ_PASSWORD` | `guest` |
+| `RABBITMQ_VHOST` | `/` |
+| `RABBITMQ_HEARTBEAT` | `60` |
+| `RABBITMQ_BLOCKED_CONNECTION_TIMEOUT` | `300` |
+| `RABBITMQ_RETRY_DELAY_SECONDS` | `5` |
+| `RABBITMQ_INPUT_EXCHANGE` | `financial-news-exchange` |
+| `RABBITMQ_INPUT_EXCHANGE_TYPE` | `direct` |
+| `RABBITMQ_INPUT_EXCHANGE_DURABLE` | `true` |
+| `RABBITMQ_INPUT_QUEUE` | `financial-news` |
+| `RABBITMQ_INPUT_QUEUE_DURABLE` | `true` |
+| `RABBITMQ_INPUT_ROUTING_KEY` | `financial-news` |
+| `RABBITMQ_OUTPUT_EXCHANGE` | `news-sentiment-exchange` |
+| `RABBITMQ_OUTPUT_EXCHANGE_TYPE` | `direct` |
+| `RABBITMQ_OUTPUT_EXCHANGE_DURABLE` | `true` |
+| `RABBITMQ_OUTPUT_QUEUE` | `news-sentiment` |
+| `RABBITMQ_OUTPUT_QUEUE_DURABLE` | `true` |
+| `RABBITMQ_OUTPUT_ROUTING_KEY` | `news-sentiment` |
+| `RABBITMQ_OUTPUT_DELIVERY_MODE` | `2` |
 
-```json
-{
-  "ticker": "AAPL",
-  "headline": "Apple reported stronger than expected quarterly earnings."
-}
-```
+The service uses consumer auto-acknowledgement. A processing failure is logged but is not retried or negatively acknowledged.
 
-### Example Response
+For example:
 
-```json
-{
-  "ticker": "AAPL",
-  "predictedDirection": "UP",
-  "confidence": 0.813,
-  "modelVersion": "finbert-eventret-v1"
-}
+```bash
+export RABBITMQ_HOST=localhost
+export RABBITMQ_USER=guest
+export RABBITMQ_PASSWORD=guest
+export RABBITMQ_VHOST=/
 ```

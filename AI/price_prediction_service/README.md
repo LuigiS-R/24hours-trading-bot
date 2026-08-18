@@ -1,6 +1,6 @@
 # Price Prediction Service
 
-This microservice predicts future stock price direction using historical market data and the output from the News Impact Prediction Service.
+This event-driven microservice predicts future stock price direction using historical market data and the output from the News Impact Prediction Service.
 
 ## Model
 
@@ -19,70 +19,57 @@ From the project root:
 pip install -r requirements.txt
 ```
 
-Then run the service:
+Set RabbitMQ configuration as environment variables, then start the consumer:
 
 ```bash
-cd AI/price_prediction_service
-uvicorn app:app --reload --port 8001
+export RABBITMQ_HOST=localhost
+export RABBITMQ_PORT=5672
+export RABBITMQ_USER=guest
+export RABBITMQ_PASS=guest
+export RABBITMQ_VHOST=/
+python consumer.py
 ```
 
-The API documentation will be available at:
+All RabbitMQ settings are environment based. The defaults are:
 
-```text
-http://127.0.0.1:8001/docs
-```
 
-## API
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `RABBITMQ_HOST` | `localhost` | Broker host |
+| `RABBITMQ_PORT` | `5672` | Broker port |
+| `RABBITMQ_USER` | `guest` | Broker user |
+| `RABBITMQ_PASS` | `guest` | Broker password |
+| `RABBITMQ_VHOST` | `/` | Broker virtual host |
+| `RABBITMQ_MARKET_TICKS_QUEUE` | `market.ticks` | Market-bar input queue |
+| `RABBITMQ_NEWS_SENTIMENT_QUEUE` | `news.sentiment` | News-sentiment input queue |
+| `RABBITMQ_PREDICTIONS_QUEUE` | `predictions` | Prediction destination/routing key |
+| `RABBITMQ_PREDICTIONS_EXCHANGE` | empty string | Prediction exchange (the default exchange) |
+| `RABBITMQ_QUEUE_DURABLE` | `true` | Whether declared queues are durable |
 
-### POST `/predict`
+## Event flow
 
-### Example Request
+The consumer receives the following messages:
+
+- `market.ticks`: `{ "ticker": "AAPL", "bar": { ...market features... } }`
+- `news.sentiment`: `{ "ticker": "AAPL", "label": 1, "confidence": 0.813 }`
+
+Price bars are retained per ticker in a fixed-size window of 20. Once the
+window is full, every incoming bar discards the oldest bar and produces a new
+prediction. A news-sentiment message also produces a new prediction when its
+ticker already has a full price window. The resulting message is published to
+the configured prediction destination:
 
 ```json
 {
   "ticker": "AAPL",
-  "priceSequence": [
-    {
-      "Open": 180.0,
-      "High": 182.0,
-      "Low": 179.0,
-      "Close": 181.0,
-      "Volume": 50000000,
-      "Return": 0.01,
-      "MA_5": 179.5,
-      "MA_20": 175.2,
-      "Volatility_5": 0.02,
-      "RSI_14": 61.5,
-      "MACD": 1.2
-    }
-  ],
-  "newsPrediction": {
-    "direction": "UP",
-    "label": 1,
-    "confidence": 0.813
-  }
+  "direction": "UP",
+  "probabilityUp": 0.9742,
+  "confidence": 0.9742,
+  "timestamp": 1723000000.0
 }
 ```
 
-> `priceSequence` must contain exactly **20 rows**.
-
-### Example Response
-
-```json
-{
-  "ticker": "AAPL",
-  "prediction": {
-    "direction": "UP",
-    "label": 1,
-    "probabilityUp": 0.9742,
-    "confidence": 0.9742
-  },
-  "model": {
-    "name": "price-prediction-lstm",
-    "version": "1.0"
-  }
-}
-```
+Both input consumers use RabbitMQ automatic acknowledgement (`auto_ack=True`).
 
 ## Role in the System
 
