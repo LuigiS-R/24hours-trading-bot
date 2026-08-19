@@ -21,4 +21,6 @@ public class AlpacaProperties {
     private String subscriptionMessage;
     @NotBlank
     private String orderEndpoint;
+    @NotBlank
+    private String paperTradingBaseUrl;
 }

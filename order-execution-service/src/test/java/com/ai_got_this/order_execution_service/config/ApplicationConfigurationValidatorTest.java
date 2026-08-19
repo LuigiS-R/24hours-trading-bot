@@ -44,6 +44,7 @@ class ApplicationConfigurationValidatorTest {
         properties.setStreamUrl("wss://broker.invalid/stream");
         properties.setSubscriptionMessage("{\"action\":\"listen\",\"data\":{\"streams\":[\"trade_updates\"]}}");
         properties.setOrderEndpoint("https://broker.invalid/v2/orders");
+        properties.setPaperTradingBaseUrl("https://broker.invalid");
         return properties;
     }
 

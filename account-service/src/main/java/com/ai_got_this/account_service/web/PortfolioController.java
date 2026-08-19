@@ -1,12 +1,11 @@
 package com.ai_got_this.account_service.web;
 
+import com.ai_got_this.account_service.client.OrderExecutionOrdersClient;
 import com.ai_got_this.account_service.domain.AlpacaConnection;
-import com.ai_got_this.account_service.domain.OrderProjection;
 import com.ai_got_this.account_service.domain.PositionProjection;
 import com.ai_got_this.account_service.domain.TradingAccountProjection;
 import com.ai_got_this.account_service.domain.User;
 import com.ai_got_this.account_service.repository.AlpacaConnectionRepository;
-import com.ai_got_this.account_service.repository.OrderProjectionRepository;
 import com.ai_got_this.account_service.repository.PositionProjectionRepository;
 import com.ai_got_this.account_service.repository.TradingAccountProjectionRepository;
 import com.ai_got_this.account_service.service.CurrentUserService;
@@ -30,19 +29,19 @@ public class PortfolioController {
     private final AlpacaConnectionRepository alpacaConnectionRepository;
     private final TradingAccountProjectionRepository tradingAccountProjectionRepository;
     private final PositionProjectionRepository positionProjectionRepository;
-    private final OrderProjectionRepository orderProjectionRepository;
+    private final OrderExecutionOrdersClient orderExecutionOrdersClient;
 
     public PortfolioController(
             CurrentUserService currentUserService,
             AlpacaConnectionRepository alpacaConnectionRepository,
             TradingAccountProjectionRepository tradingAccountProjectionRepository,
             PositionProjectionRepository positionProjectionRepository,
-            OrderProjectionRepository orderProjectionRepository) {
+            OrderExecutionOrdersClient orderExecutionOrdersClient) {
         this.currentUserService = currentUserService;
         this.alpacaConnectionRepository = alpacaConnectionRepository;
         this.tradingAccountProjectionRepository = tradingAccountProjectionRepository;
         this.positionProjectionRepository = positionProjectionRepository;
-        this.orderProjectionRepository = orderProjectionRepository;
+        this.orderExecutionOrdersClient = orderExecutionOrdersClient;
     }
 
     @GetMapping("/dashboard")
@@ -95,9 +94,9 @@ public class PortfolioController {
     }
 
     @GetMapping("/alpaca/connections/{id}/orders")
-    public List<OrderProjection> getOrders(@PathVariable UUID id) {
+    public List<OrderExecutionOrdersClient.OrderProjectionResponse> getOrders(@PathVariable UUID id) {
         currentUserService.requireOwnedConnection(id);
-        return orderProjectionRepository.findTop20ByConnectionIdOrderByUpdatedAtDesc(id);
+        return orderExecutionOrdersClient.latestOrders(id);
     }
 
     private BigDecimal total(

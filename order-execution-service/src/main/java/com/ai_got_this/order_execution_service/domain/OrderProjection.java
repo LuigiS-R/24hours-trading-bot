@@ -1,6 +1,9 @@
-package com.ai_got_this.account_service.domain;
+package com.ai_got_this.order_execution_service.domain;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -8,8 +11,10 @@ import lombok.Data;
 
 @Data
 @Entity
+@Table(name = "order_projection")
 public class OrderProjection {
-    @Id private UUID orderId;
+    @Id
+    private UUID orderId;
 
     @Column(nullable = false)
     private UUID connectionId;
@@ -20,15 +25,13 @@ public class OrderProjection {
     private String clientOrderId;
     private String symbol;
     private String side;
-    private String orderType;
-    private String timeInForce;
-    private String status;
-
     private BigDecimal quantity;
     private BigDecimal filledQuantity;
     private BigDecimal averageFilledPrice;
+    private String orderType;
+    private String timeInForce;
+    private String status;
     private BigDecimal fees;
-
     private Instant createdAt;
     private Instant updatedAt;
     private Instant filledAt;

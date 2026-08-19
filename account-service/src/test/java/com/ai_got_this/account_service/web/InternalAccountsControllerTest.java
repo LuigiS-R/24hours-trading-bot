@@ -11,6 +11,7 @@ import com.ai_got_this.account_service.repository.AlpacaConnectionRepository;
 import com.ai_got_this.account_service.repository.PositionProjectionRepository;
 import com.ai_got_this.account_service.repository.TradingAccountProjectionRepository;
 import com.ai_got_this.account_service.service.ApiException;
+import com.ai_got_this.account_service.service.SecretStore;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -32,6 +33,9 @@ class InternalAccountsControllerTest {
 
     @Mock
     private PositionProjectionRepository positionProjectionRepository;
+
+    @Mock
+    private SecretStore secretStore;
 
     @Test
     void riskSnapshotIsEligibleOnlyForFreshUnblockedConnectedAccounts() {
@@ -129,11 +133,41 @@ class InternalAccountsControllerTest {
                         "AAPL", new BigDecimal("5"), new BigDecimal("175.25")));
     }
 
+    @Test
+    void brokerCredentialsResolveOnlyTheCredentialForTheRequestedConnection() {
+        AlpacaConnection connection = connection(AlpacaConnection.ConnectionStatus.CONNECTED);
+        connection.setSecretReference("secret://alpaca/connection");
+        when(alpacaConnectionRepository.findById(connection.getConnectionId()))
+                .thenReturn(Optional.of(connection));
+        when(secretStore.read(connection.getSecretReference())).thenReturn("oauth-access-token");
+
+        InternalAccountsController.BrokerCredential credential = controller().credential(connection.getConnectionId());
+
+        assertThat(credential.connectionId()).isEqualTo(connection.getConnectionId());
+        assertThat(credential.accessToken()).isEqualTo("oauth-access-token");
+    }
+
+    @Test
+    void connectionReferencesExposeConnectionIdsAndStatusesWithoutCredentials() {
+        AlpacaConnection pending = connection(AlpacaConnection.ConnectionStatus.PENDING);
+        AlpacaConnection connected = connection(AlpacaConnection.ConnectionStatus.CONNECTED);
+        when(alpacaConnectionRepository.findAll()).thenReturn(List.of(pending, connected));
+
+        InternalAccountsController.ConnectionReferences result = controller().connectionReferences();
+
+        assertThat(result.connections()).containsExactly(
+                new InternalAccountsController.ConnectionReference(
+                        pending.getConnectionId(), AlpacaConnection.ConnectionStatus.PENDING),
+                new InternalAccountsController.ConnectionReference(
+                        connected.getConnectionId(), AlpacaConnection.ConnectionStatus.CONNECTED));
+    }
+
     private InternalAccountsController controller() {
         return new InternalAccountsController(
                 alpacaConnectionRepository,
                 tradingAccountProjectionRepository,
-                positionProjectionRepository);
+                positionProjectionRepository,
+                secretStore);
     }
 
     private AlpacaConnection connection(AlpacaConnection.ConnectionStatus status) {

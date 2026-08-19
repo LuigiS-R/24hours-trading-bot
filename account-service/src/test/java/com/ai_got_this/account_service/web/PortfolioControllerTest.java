@@ -1,17 +1,21 @@
 package com.ai_got_this.account_service.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.ai_got_this.account_service.client.OrderExecutionOrdersClient;
 import com.ai_got_this.account_service.domain.AlpacaConnection;
 import com.ai_got_this.account_service.domain.PositionProjection;
 import com.ai_got_this.account_service.domain.TradingAccountProjection;
 import com.ai_got_this.account_service.domain.User;
 import com.ai_got_this.account_service.repository.AlpacaConnectionRepository;
-import com.ai_got_this.account_service.repository.OrderProjectionRepository;
 import com.ai_got_this.account_service.repository.PositionProjectionRepository;
 import com.ai_got_this.account_service.repository.TradingAccountProjectionRepository;
 import com.ai_got_this.account_service.service.CurrentUserService;
+import com.ai_got_this.account_service.service.ApiException;
+import org.springframework.http.HttpStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -38,7 +42,7 @@ class PortfolioControllerTest {
     private PositionProjectionRepository positionProjectionRepository;
 
     @Mock
-    private OrderProjectionRepository orderProjectionRepository;
+    private OrderExecutionOrdersClient orderExecutionOrdersClient;
 
     @Test
     void dashboardAggregatesOwnedConnectionProjectionsAndUsesOldestTimestamp() {
@@ -116,13 +120,44 @@ class PortfolioControllerTest {
         assertThat(portfolio.freshness()).isEqualTo("STALE");
     }
 
+    @Test
+    void ordersRequiresOwnershipBeforeProxyingToOrderExecution() {
+        AlpacaConnection connection = connection();
+        OrderExecutionOrdersClient.OrderProjectionResponse order = new OrderExecutionOrdersClient.OrderProjectionResponse(
+                UUID.randomUUID(), connection.getConnectionId(), UUID.randomUUID(), "client-1", "AAPL", "buy",
+                BigDecimal.ONE, BigDecimal.ZERO, null, "market", "day", "new", null,
+                Instant.now(), Instant.now(), null, null);
+        when(currentUserService.requireOwnedConnection(connection.getConnectionId())).thenReturn(connection);
+        when(orderExecutionOrdersClient.latestOrders(connection.getConnectionId())).thenReturn(List.of(order));
+
+        List<OrderExecutionOrdersClient.OrderProjectionResponse> result = controller().getOrders(connection.getConnectionId());
+
+        assertThat(result).containsExactly(order);
+        verify(currentUserService).requireOwnedConnection(connection.getConnectionId());
+        verify(orderExecutionOrdersClient).latestOrders(connection.getConnectionId());
+    }
+
+    @Test
+    void ordersPropagatesTheProxyUnavailableError() {
+        AlpacaConnection connection = connection();
+        when(currentUserService.requireOwnedConnection(connection.getConnectionId())).thenReturn(connection);
+        when(orderExecutionOrdersClient.latestOrders(connection.getConnectionId())).thenThrow(new ApiException(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "ORDER_EXECUTION_UNAVAILABLE",
+                "Order data is temporarily unavailable."));
+
+        assertThatThrownBy(() -> controller().getOrders(connection.getConnectionId()))
+                .isInstanceOf(ApiException.class)
+                .satisfies(error -> assertThat(((ApiException) error).code).isEqualTo("ORDER_EXECUTION_UNAVAILABLE"));
+    }
+
     private PortfolioController controller() {
         return new PortfolioController(
                 currentUserService,
                 alpacaConnectionRepository,
                 tradingAccountProjectionRepository,
                 positionProjectionRepository,
-                orderProjectionRepository);
+                orderExecutionOrdersClient);
     }
 
     private AlpacaConnection connection() {

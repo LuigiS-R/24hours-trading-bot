@@ -149,23 +149,6 @@ public class AlpacaTradingClient {
         return positions == null ? List.of() : positions;
     }
 
-    /**
-     * Retrieves the most recent complete order view available from Alpaca.  Alpaca caps one
-     * response at 500 orders, which is also its documented maximum page size.
-     */
-    public List<BrokerOrder> getOrders(AlpacaConnection connection) {
-        List<BrokerOrder> orders = executeBrokerCall(
-                "ALPACA_ORDER_RECONCILIATION_FAILED",
-                "Unable to retrieve Alpaca orders.",
-                () -> authorizedRequest(HttpMethod.GET, connection, "/v2/orders?status=all&limit=500")
-                        .retrieve()
-                        .bodyToFlux(BrokerOrder.class)
-                        .collectList()
-                        .block());
-
-        return orders == null ? List.of() : orders;
-    }
-
     private WebClient.RequestBodySpec authorizedRequest(
             HttpMethod method,
             AlpacaConnection connection,
@@ -236,24 +219,6 @@ public class AlpacaTradingClient {
             BigDecimal current_price,
             BigDecimal market_value,
             BigDecimal unrealized_pl) {
-    }
-
-    public record BrokerOrder(
-            UUID id,
-            String client_order_id,
-            String symbol,
-            String side,
-            String type,
-            String time_in_force,
-            String status,
-            BigDecimal qty,
-            BigDecimal filled_qty,
-            BigDecimal filled_avg_price,
-            BigDecimal commission,
-            java.time.Instant created_at,
-            java.time.Instant updated_at,
-            java.time.Instant filled_at,
-            java.time.Instant canceled_at) {
     }
 
     private record WatchlistWrite(String name, List<String> symbols) {

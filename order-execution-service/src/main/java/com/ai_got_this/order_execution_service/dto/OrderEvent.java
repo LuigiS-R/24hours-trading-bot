@@ -4,30 +4,38 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.Objects;
-
 @Data
 @NoArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OrderEvent {
+    private String stream;
+    private String at;
     private String event;
-    private String cancelRequestedAt;
-    private String canceledAt;
-    private String clientOrderId;
-    private String updatedAt;
+    private String eventId;
+    private String executionId;
+    private String timestamp;
+    private String price;
+    private String qty;
+    private String positionQty;
+    private java.util.Map<String, String> positionQtys;
+    private TradeUpdateOrder order;
+    private java.util.List<TradeUpdateExecution> legs;
 
     public OrderEvent(TradeUpdateResponse tradeUpdateResponse) {
         TradeUpdateData data = tradeUpdateResponse.getData();
+        stream = tradeUpdateResponse.getStream();
         if (data != null) {
+            at = data.getAt();
             event = data.getEvent();
-
-            TradeUpdateOrder order = data.getOrder();
-            if (order != null) {
-                cancelRequestedAt = order.getCancelRequestedAt();
-                canceledAt = order.getCanceledAt();
-                clientOrderId = order.getClientOrderId();
-                updatedAt = order.getUpdatedAt();
-            }
+            eventId = data.getEventId();
+            executionId = data.getExecutionId();
+            timestamp = data.getTimestamp();
+            price = data.getPrice();
+            qty = data.getQty();
+            positionQty = data.getPositionQty();
+            positionQtys = data.getPositionQtys();
+            order = data.getOrder();
+            legs = data.getLegs();
         }
     }
 }

@@ -63,7 +63,7 @@ public class AlpacaBroker implements Broker{
             }
         }
         catch (RestClientException e) {
-            log.error("[Alpaca Broker] Failed to perform HTTP request to the broker. Detailed Explanation: [{}]", e.getMessage());
+            log.error("[Alpaca Broker] Failed to perform HTTP request to the broker.");
         }
     }
 

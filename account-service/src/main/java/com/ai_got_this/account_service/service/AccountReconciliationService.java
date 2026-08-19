@@ -2,13 +2,11 @@ package com.ai_got_this.account_service.service;
 
 import com.ai_got_this.account_service.client.AlpacaTradingClient;
 import com.ai_got_this.account_service.domain.AlpacaConnection;
-import com.ai_got_this.account_service.domain.OrderProjection;
 import com.ai_got_this.account_service.domain.PositionProjection;
 import com.ai_got_this.account_service.domain.TradingAccountProjection;
 import com.ai_got_this.account_service.domain.Watchlist;
 import com.ai_got_this.account_service.domain.WatchlistEntry;
 import com.ai_got_this.account_service.repository.AlpacaConnectionRepository;
-import com.ai_got_this.account_service.repository.OrderProjectionRepository;
 import com.ai_got_this.account_service.repository.PositionProjectionRepository;
 import com.ai_got_this.account_service.repository.TradingAccountProjectionRepository;
 import com.ai_got_this.account_service.repository.WatchlistEntryRepository;
@@ -31,7 +29,6 @@ public class AccountReconciliationService {
     private final AlpacaConnectionRepository alpacaConnectionRepository;
     private final TradingAccountProjectionRepository tradingAccountProjectionRepository;
     private final PositionProjectionRepository positionProjectionRepository;
-    private final OrderProjectionRepository orderProjectionRepository;
     private final WatchlistRepository watchlistRepository;
     private final WatchlistEntryRepository watchlistEntryRepository;
     private final ConnectionFailureService connectionFailureService;
@@ -41,7 +38,6 @@ public class AccountReconciliationService {
             AlpacaConnectionRepository alpacaConnectionRepository,
             TradingAccountProjectionRepository tradingAccountProjectionRepository,
             PositionProjectionRepository positionProjectionRepository,
-            OrderProjectionRepository orderProjectionRepository,
             WatchlistRepository watchlistRepository,
             WatchlistEntryRepository watchlistEntryRepository,
             ConnectionFailureService connectionFailureService) {
@@ -49,7 +45,6 @@ public class AccountReconciliationService {
         this.alpacaConnectionRepository = alpacaConnectionRepository;
         this.tradingAccountProjectionRepository = tradingAccountProjectionRepository;
         this.positionProjectionRepository = positionProjectionRepository;
-        this.orderProjectionRepository = orderProjectionRepository;
         this.watchlistRepository = watchlistRepository;
         this.watchlistEntryRepository = watchlistEntryRepository;
         this.connectionFailureService = connectionFailureService;
@@ -66,7 +61,6 @@ public class AccountReconciliationService {
             updateConnection(connection, account);
             TradingAccountProjection projection = updateAccountProjection(connection, account);
             reconcilePositions(connection);
-            reconcileOrders(connection);
             reconcileWatchlists(connection);
 
             return projection;
@@ -126,35 +120,6 @@ public class AccountReconciliationService {
             if (!brokerSymbols.contains(localPosition.getSymbol())) {
                 positionProjectionRepository.delete(localPosition);
             }
-        }
-    }
-
-    private void reconcileOrders(AlpacaConnection connection) {
-        for (AlpacaTradingClient.BrokerOrder brokerOrder : alpacaTradingClient.getOrders(connection)) {
-            if (brokerOrder.id() == null || brokerOrder.symbol() == null || brokerOrder.updated_at() == null) {
-                continue;
-            }
-
-            OrderProjection localOrder = orderProjectionRepository.findByAlpacaOrderId(brokerOrder.id())
-                    .orElseGet(OrderProjection::new);
-            localOrder.setOrderId(localOrder.getOrderId() == null ? UUID.randomUUID() : localOrder.getOrderId());
-            localOrder.setConnectionId(connection.getConnectionId());
-            localOrder.setAlpacaOrderId(brokerOrder.id());
-            localOrder.setClientOrderId(brokerOrder.client_order_id());
-            localOrder.setSymbol(brokerOrder.symbol());
-            localOrder.setSide(brokerOrder.side());
-            localOrder.setOrderType(brokerOrder.type());
-            localOrder.setTimeInForce(brokerOrder.time_in_force());
-            localOrder.setStatus(brokerOrder.status());
-            localOrder.setQuantity(brokerOrder.qty());
-            localOrder.setFilledQuantity(brokerOrder.filled_qty());
-            localOrder.setAverageFilledPrice(brokerOrder.filled_avg_price());
-            localOrder.setFees(brokerOrder.commission());
-            localOrder.setCreatedAt(brokerOrder.created_at());
-            localOrder.setUpdatedAt(brokerOrder.updated_at());
-            localOrder.setFilledAt(brokerOrder.filled_at());
-            localOrder.setCancelledAt(brokerOrder.canceled_at());
-            orderProjectionRepository.save(localOrder);
         }
     }
 

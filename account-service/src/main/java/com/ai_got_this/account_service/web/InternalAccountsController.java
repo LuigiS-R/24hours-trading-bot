@@ -6,6 +6,7 @@ import java.time.*;
 import java.util.*;
 
 import com.ai_got_this.account_service.service.ApiException;
+import com.ai_got_this.account_service.service.SecretStore;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,14 +16,17 @@ public class InternalAccountsController {
     final AlpacaConnectionRepository connections;
     final TradingAccountProjectionRepository accounts;
     final PositionProjectionRepository positions;
+    final SecretStore secretStore;
 
     public InternalAccountsController(
             AlpacaConnectionRepository c,
             TradingAccountProjectionRepository a,
-            PositionProjectionRepository p) {
+            PositionProjectionRepository p,
+            SecretStore secretStore) {
         connections = c;
         accounts = a;
         positions = p;
+        this.secretStore = secretStore;
     }
 
     record RiskSnapshot(
@@ -46,6 +50,10 @@ public class InternalAccountsController {
     record EligiblePortfolio(UUID connectionId, java.math.BigDecimal cashBalance, List<Position> positions) {}
 
     record Position(String ticker, java.math.BigDecimal quantity, java.math.BigDecimal averagePrice) {}
+
+    record ConnectionReference(UUID connectionId, AlpacaConnection.ConnectionStatus status) {}
+
+    record ConnectionReferences(List<ConnectionReference> connections) {}
 
     @GetMapping("/accounts/{id}/risk-snapshot")
     public RiskSnapshot risk(@PathVariable UUID id) {
@@ -97,15 +105,26 @@ public class InternalAccountsController {
         return new EligiblePortfolios(portfolios);
     }
 
-    @GetMapping("/accounts/{id}/broker-credential-reference")
-    public Object credential(@PathVariable UUID id) {
+    @GetMapping("/accounts/connections")
+    public ConnectionReferences connectionReferences() {
+        return new ConnectionReferences(connections.findAll().stream()
+                .map(connection -> new ConnectionReference(connection.getConnectionId(), connection.getStatus()))
+                .toList());
+    }
+
+    record BrokerCredential(UUID connectionId, String accessToken) {}
+
+    @GetMapping("/accounts/{id}/broker-credentials")
+    public BrokerCredential credential(@PathVariable UUID id) {
         AlpacaConnection c = connection(id);
-        return Map.of(
-                "connectionId", c.getConnectionId(),
-                "alpacaAccountId", c.getAlpacaAccountId(),
-                "secretReference", c.getSecretReference(),
-                "status", c.getStatus()
-        );
+        String accessToken = secretStore.read(c.getSecretReference());
+        if (accessToken == null) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "ALPACA_REAUTH_REQUIRED",
+                    "Reconnect your Alpaca paper account to continue.");
+        }
+        return new BrokerCredential(c.getConnectionId(), accessToken);
     }
 
     private AlpacaConnection connection(UUID id) {
