@@ -9,6 +9,7 @@ import lombok.Data;
 @JsonIgnoreProperties(ignoreUnknown = true)
 @Data
 public class Order {
+    private String connectionId;
     @JsonAlias("ticker")
     private String symbol;
     @JsonProperty("qty")
@@ -21,4 +22,5 @@ public class Order {
     @JsonProperty("limitPrice")
     @JsonAlias("limit_price")
     private BigDecimal limitPrice;
+    private String reason;
 }

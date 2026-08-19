@@ -48,11 +48,13 @@ class ListenerServiceTest {
 
     private static Order validOrder() {
         Order order = new Order();
+        order.setConnectionId("brokerage-connection-1");
         order.setSymbol("AAPL");
         order.setQuantity(1);
         order.setSide("buy");
         order.setType("limit");
         order.setLimitPrice(BigDecimal.valueOf(100));
+        order.setReason("Approved trading signal");
         return order;
     }
 

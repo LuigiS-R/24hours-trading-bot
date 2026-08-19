@@ -36,6 +36,8 @@ class OrderValidatorTest {
 
     private static Stream<InvalidOrder> invalidOrders() {
         return Stream.of(
+                new InvalidOrder(order -> order.setConnectionId(null), "connectionId is missing"),
+                new InvalidOrder(order -> order.setConnectionId(" "), "connectionId is missing"),
                 new InvalidOrder(order -> order.setSymbol(null), "symbol is missing or invalid"),
                 new InvalidOrder(order -> order.setSymbol(" "), "symbol is missing or invalid"),
                 new InvalidOrder(order -> order.setSymbol("AAPL$"), "symbol is missing or invalid"),
@@ -47,17 +49,21 @@ class OrderValidatorTest {
                 new InvalidOrder(order -> order.setType("market"), "only limit orders are supported"),
                 new InvalidOrder(order -> order.setLimitPrice(null), "limitPrice must be greater than zero"),
                 new InvalidOrder(order -> order.setLimitPrice(BigDecimal.ZERO), "limitPrice must be greater than zero"),
-                new InvalidOrder(order -> order.setLimitPrice(BigDecimal.valueOf(-1)), "limitPrice must be greater than zero")
+                new InvalidOrder(order -> order.setLimitPrice(BigDecimal.valueOf(-1)), "limitPrice must be greater than zero"),
+                new InvalidOrder(order -> order.setReason(null), "reason is missing"),
+                new InvalidOrder(order -> order.setReason(" "), "reason is missing")
         );
     }
 
     private static Order validOrder() {
         Order order = new Order();
+        order.setConnectionId("brokerage-connection-1");
         order.setSymbol("AAPL");
         order.setQuantity(1);
         order.setSide("buy");
         order.setType("limit");
         order.setLimitPrice(BigDecimal.valueOf(100));
+        order.setReason("Approved trading signal");
         return order;
     }
 

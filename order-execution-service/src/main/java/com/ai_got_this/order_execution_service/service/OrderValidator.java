@@ -18,6 +18,9 @@ public class OrderValidator {
         if (order == null) {
             return Optional.of("order is missing");
         }
+        if (order.getConnectionId() == null || order.getConnectionId().isBlank()) {
+            return Optional.of("connectionId is missing");
+        }
         if (order.getSymbol() == null || !SYMBOL_PATTERN.matcher(order.getSymbol()).matches()) {
             return Optional.of("symbol is missing or invalid");
         }
@@ -32,6 +35,9 @@ public class OrderValidator {
         }
         if (order.getLimitPrice() == null || order.getLimitPrice().compareTo(BigDecimal.ZERO) <= 0) {
             return Optional.of("limitPrice must be greater than zero");
+        }
+        if (order.getReason() == null || order.getReason().isBlank()) {
+            return Optional.of("reason is missing");
         }
         return Optional.empty();
     }
