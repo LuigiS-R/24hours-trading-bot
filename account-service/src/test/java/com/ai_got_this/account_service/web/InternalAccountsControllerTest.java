@@ -5,11 +5,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import com.ai_got_this.account_service.domain.AlpacaConnection;
+import com.ai_got_this.account_service.domain.PositionProjection;
 import com.ai_got_this.account_service.domain.TradingAccountProjection;
 import com.ai_got_this.account_service.repository.AlpacaConnectionRepository;
 import com.ai_got_this.account_service.repository.PositionProjectionRepository;
 import com.ai_got_this.account_service.repository.TradingAccountProjectionRepository;
 import com.ai_got_this.account_service.service.ApiException;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -93,6 +95,38 @@ class InternalAccountsControllerTest {
 
         assertThat(snapshot.account()).isSameAs(account);
         assertThat(snapshot.positions()).isEmpty();
+    }
+
+    @Test
+    void eligiblePortfoliosReturnsOnlyActiveUnblockedAccountsWithMappedPositions() {
+        UUID eligibleConnectionId = UUID.randomUUID();
+        TradingAccountProjection eligible = new TradingAccountProjection();
+        eligible.setConnectionId(eligibleConnectionId);
+        eligible.setStatus("ACTIVE");
+        eligible.setCash(new BigDecimal("10000.00"));
+
+        TradingAccountProjection blocked = new TradingAccountProjection();
+        blocked.setConnectionId(UUID.randomUUID());
+        blocked.setStatus("ACTIVE");
+        blocked.setTradingBlocked(true);
+
+        PositionProjection position = new PositionProjection();
+        position.setSymbol("AAPL");
+        position.setQuantity(new BigDecimal("5"));
+        position.setAverageEntryPrice(new BigDecimal("175.25"));
+        when(tradingAccountProjectionRepository.findAll()).thenReturn(List.of(eligible, blocked));
+        when(positionProjectionRepository.findByConnectionId(eligibleConnectionId))
+                .thenReturn(List.of(position));
+
+        InternalAccountsController.EligiblePortfolios result = controller().eligiblePortfolios();
+
+        assertThat(result.portfolios()).hasSize(1);
+        InternalAccountsController.EligiblePortfolio portfolio = result.portfolios().getFirst();
+        assertThat(portfolio.connectionId()).isEqualTo(eligibleConnectionId);
+        assertThat(portfolio.cashBalance()).isEqualByComparingTo("10000.00");
+        assertThat(portfolio.positions()).containsExactly(
+                new InternalAccountsController.Position(
+                        "AAPL", new BigDecimal("5"), new BigDecimal("175.25")));
     }
 
     private InternalAccountsController controller() {

@@ -41,6 +41,12 @@ public class InternalAccountsController {
 
     record PortfolioSnapshot(TradingAccountProjection account, List<PositionProjection> positions) {}
 
+    record EligiblePortfolios(List<EligiblePortfolio> portfolios) {}
+
+    record EligiblePortfolio(UUID connectionId, java.math.BigDecimal cashBalance, List<Position> positions) {}
+
+    record Position(String ticker, java.math.BigDecimal quantity, java.math.BigDecimal averagePrice) {}
+
     @GetMapping("/accounts/{id}/risk-snapshot")
     public RiskSnapshot risk(@PathVariable UUID id) {
         AlpacaConnection c = connection(id);
@@ -74,6 +80,23 @@ public class InternalAccountsController {
         return new PortfolioSnapshot(accounts.findById(id).orElse(null), positions.findByConnectionId(id));
     }
 
+    @GetMapping("/accounts/portfolio")
+    public EligiblePortfolios eligiblePortfolios() {
+        List<EligiblePortfolio> portfolios = accounts.findAll().stream()
+                .filter(this::isEligibleForOrderPlacement)
+                .map(account -> new EligiblePortfolio(
+                        account.getConnectionId(),
+                        account.getCash(),
+                        positions.findByConnectionId(account.getConnectionId()).stream()
+                                .map(position -> new Position(
+                                        position.getSymbol(),
+                                        position.getQuantity(),
+                                        position.getAverageEntryPrice()))
+                                .toList()))
+                .toList();
+        return new EligiblePortfolios(portfolios);
+    }
+
     @GetMapping("/accounts/{id}/broker-credential-reference")
     public Object credential(@PathVariable UUID id) {
         AlpacaConnection c = connection(id);
@@ -88,6 +111,13 @@ public class InternalAccountsController {
     private AlpacaConnection connection(UUID id) {
         return connections
                 .findById(id)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONNECTION_NOT_FOUND", "Connection not found."));
+                        .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONNECTION_NOT_FOUND", "Connection not found."));
+    }
+
+    private boolean isEligibleForOrderPlacement(TradingAccountProjection account) {
+        return "ACTIVE".equalsIgnoreCase(account.getStatus())
+                && !account.isAccountBlocked()
+                && !account.isTradingBlocked()
+                && !account.isTradeSuspendedByUser();
     }
 }
