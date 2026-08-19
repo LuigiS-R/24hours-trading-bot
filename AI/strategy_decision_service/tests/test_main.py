@@ -10,8 +10,15 @@ import main
 @pytest.fixture
 def portfolio():
     return {
-        "cash": 10_000.0,
-        "positions": {"AAPL": {"quantity": 3, "avg_price": 175.25}},
+        "portfolios": [
+            {
+                "connectionId": "brokerage-connection-1",
+                "cashBalance": 10_000.0,
+                "positions": [
+                    {"ticker": "AAPL", "quantity": 3, "averagePrice": 175.25}
+                ],
+            }
+        ]
     }
 
 
@@ -62,49 +69,92 @@ def test_fetch_portfolio_returns_none_for_unavailable_or_invalid_response(monkey
 
 
 def test_low_confidence_prediction_does_not_create_order(portfolio):
-    decision = main.evaluate_trading_decision(
+    decisions = main.evaluate_trading_decisions(
         {"ticker": "AAPL", "direction": "UP", "confidence": 0.64}, portfolio
     )
 
-    assert decision is None
+    assert decisions == []
 
 
 def test_up_prediction_creates_risk_sized_buy_order(portfolio, prediction):
-    decision = main.evaluate_trading_decision(prediction, portfolio, current_price=180.0)
+    decisions = main.evaluate_trading_decisions(prediction, portfolio, current_price=180.0)
 
-    assert decision == {
+    assert decisions == [{
+        "connectionId": "brokerage-connection-1",
         "ticker": "AAPL",
         "action": "BUY",
         "quantity": 2,
         "order_type": "LIMIT",
         "limit_price": 180.18,
         "reason": "LSTM UP prediction with 80.0% confidence",
-    }
+    }]
 
 
 def test_down_prediction_sells_entire_open_position(portfolio):
-    decision = main.evaluate_trading_decision(
+    decisions = main.evaluate_trading_decisions(
         {"ticker": "AAPL", "direction": "DOWN", "confidence": 0.80},
         portfolio,
         current_price=180.0,
     )
 
-    assert decision == {
+    assert decisions == [{
+        "connectionId": "brokerage-connection-1",
         "ticker": "AAPL",
         "action": "SELL",
         "quantity": 3,
         "order_type": "LIMIT",
         "limit_price": 179.82,
         "reason": "LSTM DOWN prediction with 80.0% confidence",
-    }
+    }]
 
 
 def test_down_prediction_without_position_does_not_create_order(portfolio):
-    decision = main.evaluate_trading_decision(
+    decisions = main.evaluate_trading_decisions(
         {"ticker": "MSFT", "direction": "DOWN", "confidence": 0.80}, portfolio
     )
 
-    assert decision is None
+    assert decisions == []
+
+
+def test_decisions_are_calculated_and_routed_per_connection():
+    portfolio = {
+        "portfolios": [
+            {
+                "connectionId": "brokerage-connection-1",
+                "cashBalance": 10_000.0,
+                "positions": [
+                    {"ticker": "AAPL", "quantity": 2, "averagePrice": 175.25}
+                ],
+            },
+            {
+                "connectionId": "brokerage-connection-2",
+                "cashBalance": 8_000.0,
+                "positions": [
+                    {"ticker": "AAPL", "quantity": 3, "averagePrice": 180.00}
+                ],
+            },
+        ]
+    }
+
+    buy = main.evaluate_trading_decisions(
+        {"ticker": "AAPL", "direction": "UP", "confidence": 0.80},
+        portfolio,
+        current_price=180.0,
+    )
+    sell = main.evaluate_trading_decisions(
+        {"ticker": "AAPL", "direction": "DOWN", "confidence": 0.80},
+        portfolio,
+        current_price=180.0,
+    )
+
+    assert [(order["connectionId"], order["quantity"]) for order in buy] == [
+        ("brokerage-connection-1", 2),
+        ("brokerage-connection-2", 2),
+    ]
+    assert [(order["connectionId"], order["quantity"]) for order in sell] == [
+        ("brokerage-connection-1", 2),
+        ("brokerage-connection-2", 3),
+    ]
 
 
 class FakeChannel:
@@ -214,6 +264,7 @@ def test_worker_publishes_and_acknowledges_approved_prediction(monkeypatch, port
             "routing_key": main.RABBITMQ_APPROVED_ORDERS_QUEUE,
             "body": json.dumps(
                 {
+                    "connectionId": "brokerage-connection-1",
                     "ticker": "AAPL",
                     "action": "BUY",
                     "quantity": 2,
@@ -226,6 +277,47 @@ def test_worker_publishes_and_acknowledges_approved_prediction(monkeypatch, port
     ]
     assert channel.acknowledgements == [{"delivery_tag": 42}]
     assert channel.rejections == []
+
+
+def test_worker_publishes_one_order_per_applicable_connection(monkeypatch, prediction):
+    channel = FakeChannel(delivery=prediction)
+    portfolio = {
+        "portfolios": [
+            {
+                "connectionId": "brokerage-connection-1",
+                "cashBalance": 10_000.0,
+                "positions": [],
+            },
+            {
+                "connectionId": "brokerage-connection-2",
+                "cashBalance": 8_000.0,
+                "positions": [],
+            },
+        ]
+    }
+
+    run_worker_once(monkeypatch, channel, portfolio)
+
+    assert [json.loads(message["body"]) for message in channel.published] == [
+        {
+            "connectionId": "brokerage-connection-1",
+            "ticker": "AAPL",
+            "action": "BUY",
+            "quantity": 2,
+            "order_type": "LIMIT",
+            "limit_price": 180.18,
+            "reason": "LSTM UP prediction with 80.0% confidence",
+        },
+        {
+            "connectionId": "brokerage-connection-2",
+            "ticker": "AAPL",
+            "action": "BUY",
+            "quantity": 2,
+            "order_type": "LIMIT",
+            "limit_price": 180.18,
+            "reason": "LSTM UP prediction with 80.0% confidence",
+        },
+    ]
 
 
 def test_worker_requeues_message_when_portfolio_is_unavailable(monkeypatch, prediction):

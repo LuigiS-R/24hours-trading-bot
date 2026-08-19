@@ -38,55 +38,67 @@ def fetch_portfolio():
         return None
 
 
-def evaluate_trading_decision(prediction, portfolio, current_price=180.0):
+def evaluate_trading_decisions(prediction, portfolio_response, current_price=180.0):
     """
     Improved decision rules:
     - Checks confidence threshold to avoid low-certainty trades.
-    - Sizes the position based on risk percentage and available cash.
-    - Formulates limit order parameters.
+    - Applies the strategy independently to each brokerage connection.
+    - Returns one order per connection that meets the decision criteria.
     """
     ticker = prediction["ticker"]
     direction = prediction["direction"]
     confidence = prediction["confidence"]
-    
+
     # 1. Low-confidence filter -> HOLD
     if confidence < CONFIDENCE_THRESHOLD:
         print(f" [Decision] {ticker}: Confidence {confidence:.2f} below threshold {CONFIDENCE_THRESHOLD}. HOLD.")
-        return None
+        return []
 
-    # 2. Buy Decision
-    if direction == "UP":
-        allocated_capital = portfolio["cash"] * MAX_PORTFOLIO_RISK_PCT
-        quantity = int(allocated_capital // current_price)
-        
-        if quantity <= 0:
-            print(f" [Decision] Insufficient cash to buy {ticker}.")
-            return None
-        
-        return {
-            "ticker": ticker,
-            "action": "BUY",
-            "quantity": quantity,
-            "order_type": "LIMIT",
-            "limit_price": round(current_price * 1.001, 2), # Slight buffer for fills
-            "reason": f"LSTM UP prediction with {confidence*100:.1f}% confidence"
-        }
+    decisions = []
+    for portfolio in portfolio_response["portfolios"]:
+        connection_id = portfolio["connectionId"]
 
-    # 3. Sell Decision
-    elif direction == "DOWN":
-        current_holding = portfolio["positions"].get(ticker, {}).get("quantity", 0)
-        if current_holding <= 0:
-            print(f" [Decision] {ticker}: Prediction DOWN, but no open positions to sell.")
-            return None
-        
-        return {
-            "ticker": ticker,
-            "action": "SELL",
-            "quantity": current_holding,
-            "order_type": "LIMIT",
-            "limit_price": round(current_price * 0.999, 2),
-            "reason": f"LSTM DOWN prediction with {confidence*100:.1f}% confidence"
-        }
+        # 2. Buy Decision: risk-size only against this connection's cash.
+        if direction == "UP":
+            allocated_capital = portfolio["cashBalance"] * MAX_PORTFOLIO_RISK_PCT
+            quantity = int(allocated_capital // current_price)
+
+            if quantity <= 0:
+                print(f" [Decision] {connection_id}: Insufficient cash to buy {ticker}.")
+                continue
+
+            decisions.append({
+                "connectionId": connection_id,
+                "ticker": ticker,
+                "action": "BUY",
+                "quantity": quantity,
+                "order_type": "LIMIT",
+                "limit_price": round(current_price * 1.001, 2), # Slight buffer for fills
+                "reason": f"LSTM UP prediction with {confidence*100:.1f}% confidence"
+            })
+
+        # 3. Sell Decision: sell only the holding in this connection.
+        elif direction == "DOWN":
+            current_holding = sum(
+                position["quantity"]
+                for position in portfolio["positions"]
+                if position["ticker"] == ticker
+            )
+            if current_holding <= 0:
+                print(f" [Decision] {connection_id}: {ticker} DOWN, but no open position to sell.")
+                continue
+
+            decisions.append({
+                "connectionId": connection_id,
+                "ticker": ticker,
+                "action": "SELL",
+                "quantity": current_holding,
+                "order_type": "LIMIT",
+                "limit_price": round(current_price * 0.999, 2),
+                "reason": f"LSTM DOWN prediction with {confidence*100:.1f}% confidence"
+            })
+
+    return decisions
 
 def main():
     credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)
@@ -113,9 +125,9 @@ def main():
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
             return
 
-        decision = evaluate_trading_decision(prediction, portfolio)
-        
-        if decision:
+        decisions = evaluate_trading_decisions(prediction, portfolio)
+
+        for decision in decisions:
             # Publish order to execution service
             channel.basic_publish(
                 exchange="",
