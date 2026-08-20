@@ -1,6 +1,7 @@
 package com.ai_got_this.order_execution_service.service;
 
 import com.ai_got_this.order_execution_service.config.AlpacaProperties;
+import com.ai_got_this.order_execution_service.dto.OrderEvent;
 import com.ai_got_this.order_execution_service.dto.Order;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Map;
@@ -32,6 +34,7 @@ import java.math.BigDecimal;
 
 class AlpacaBrokerTest {
     private final RestTemplate restTemplate = mock(RestTemplate.class);
+    private final PublisherService publisherService = mock(PublisherService.class);
     private final AlpacaProperties properties = new AlpacaProperties();
     private final Order order = new Order();
     private AlpacaBroker broker;
@@ -46,13 +49,27 @@ class AlpacaBrokerTest {
         order.setSide("buy");
         order.setType("limit");
         order.setLimitPrice(BigDecimal.valueOf(123.45));
-        broker = new AlpacaBroker(restTemplate, new ObjectMapper(), properties);
+        order.setConnectionId("cdb06f0b-e7ea-4a24-832e-23d9d7fd6f64");
+        broker = new AlpacaBroker(restTemplate, new ObjectMapper(), properties, publisherService);
     }
 
     @Test
     void submitsTheOriginalOrderToTheConfiguredEndpointOnSuccessfulResponse() {
         when(restTemplate.exchange(eq(properties.getOrderEndpoint()), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
-                .thenReturn(ResponseEntity.ok("{\"clientOrderId\":\"client-123\"}"));
+                .thenReturn(ResponseEntity.ok("""
+                        {
+                          "id":"a5be8f5e-fdfa-41f5-a644-7a74fe947a8f",
+                          "client_order_id":"client-123",
+                          "symbol":"AAPL",
+                          "side":"buy",
+                          "qty":"3",
+                          "type":"limit",
+                          "time_in_force":"day",
+                          "status":"accepted",
+                          "created_at":"2026-08-20T00:00:00Z",
+                          "updated_at":"2026-08-20T00:00:00Z"
+                        }
+                        """));
 
         broker.placeOrder(order);
 
@@ -69,6 +86,11 @@ class AlpacaBrokerTest {
         assertEquals("key", request.getValue().getHeaders().getFirst("APCA-API-KEY-ID"));
         assertEquals("secret", request.getValue().getHeaders().getFirst("APCA-API-SECRET-KEY"));
         assertEquals("application/json", request.getValue().getHeaders().getContentType().toString());
+        verify(publisherService).publishOrderEvent(argThat(event ->
+                "HTTP".equals(event.getStream())
+                        && "create".equals(event.getEvent())
+                        && order.getConnectionId().equals(event.getConnectionId())
+                        && "a5be8f5e-fdfa-41f5-a644-7a74fe947a8f".equals(event.getOrder().getId())));
     }
 
     @ParameterizedTest

@@ -13,18 +13,24 @@ class RabbitMqConfigTest {
         RabbitMqProperties properties = new RabbitMqProperties();
         properties.setOrderEventsPortfolioQueue("portfolio-events");
         properties.setOrderEventsNotificationQueue("notification-events");
+        properties.setOrderEventsPersisterQueue("persister-events");
         properties.setOrderEventsExchange("order-events");
         RabbitMqConfig config = new RabbitMqConfig(properties, new ApplicationConfigurationValidator(validAlpacaProperties(), properties));
 
         Queue portfolioQueue = config.orderEventsPortfolioQueue();
         Queue notificationQueue = config.orderEventsNotificationQueue();
+        Queue persisterQueue = config.orderEventsPersisterQueue();
         FanoutExchange exchange = config.orderEventsFanoutExchange();
 
         assertEquals("portfolio-events", portfolioQueue.getName());
         assertEquals("notification-events", notificationQueue.getName());
+        assertEquals("persister-events", persisterQueue.getName());
         assertEquals("order-events", exchange.getName());
         assertTrue(portfolioQueue.isDurable());
         assertTrue(notificationQueue.isDurable());
+        assertTrue(persisterQueue.isDurable());
+        assertEquals("order-events", config.orderEventsPersisterBinding(persisterQueue, exchange).getExchange());
+        assertEquals("persister-events", config.orderEventsPersisterBinding(persisterQueue, exchange).getDestination());
     }
 
     private static AlpacaProperties validAlpacaProperties() {

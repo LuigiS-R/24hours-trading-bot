@@ -38,6 +38,7 @@ class OrderEventTest {
         assertEquals("event-1", event.getEventId());
         assertEquals("execution-1", event.getExecutionId());
         assertEquals("2", event.getPositionQty());
+        assertEquals(null, event.getConnectionId());
         assertEquals("client-order-1", event.getOrder().getClientOrderId());
         assertEquals("filled", event.getOrder().getStatus());
         assertEquals("2", event.getOrder().getFilledQty());
@@ -77,6 +78,7 @@ class OrderEventTest {
         assertEquals("2022-04-19T13:45:05.027690731-04:00", orderEvent.getOrder().getUpdatedAt());
 
         assertTrue(jsonNode.has("event"));
+        assertTrue(jsonNode.has("connectionId"));
         assertTrue(jsonNode.has("stream"));
         assertTrue(jsonNode.has("executionId"));
         assertTrue(jsonNode.has("timestamp"));
@@ -86,5 +88,18 @@ class OrderEventTest {
         assertTrue(jsonNode.has("order"));
         assertTrue(jsonNode.path("order").has("clientOrderId"));
         assertTrue(jsonNode.path("order").has("filledQty"));
+    }
+
+    @Test
+    void createsAnHttpCreationEventWithTheSubmittingConnection() {
+        TradeUpdateOrder order = new TradeUpdateOrder();
+        order.setId("a5be8f5e-fdfa-41f5-a644-7a74fe947a8f");
+
+        OrderEvent event = OrderEvent.httpOrderCreated("cdb06f0b-e7ea-4a24-832e-23d9d7fd6f64", order);
+
+        assertEquals("HTTP", event.getStream());
+        assertEquals("create", event.getEvent());
+        assertEquals("cdb06f0b-e7ea-4a24-832e-23d9d7fd6f64", event.getConnectionId());
+        assertEquals(order, event.getOrder());
     }
 }

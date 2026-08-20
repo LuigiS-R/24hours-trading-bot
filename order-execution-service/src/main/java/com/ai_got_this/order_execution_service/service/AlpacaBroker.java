@@ -2,7 +2,8 @@ package com.ai_got_this.order_execution_service.service;
 
 import com.ai_got_this.order_execution_service.config.AlpacaProperties;
 import com.ai_got_this.order_execution_service.dto.Order;
-import com.ai_got_this.order_execution_service.dto.OrderResponse;
+import com.ai_got_this.order_execution_service.dto.OrderEvent;
+import com.ai_got_this.order_execution_service.dto.TradeUpdateOrder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -26,11 +27,17 @@ public class AlpacaBroker implements Broker{
     private RestTemplate restTemplate;
     private ObjectMapper objectMapper;
     private AlpacaProperties alpacaProperties;
+    private PublisherService publisherService;
 
-    public AlpacaBroker(RestTemplate restTemplate, ObjectMapper objectMapper, AlpacaProperties alpacaProperties) {
+    public AlpacaBroker(
+            RestTemplate restTemplate,
+            ObjectMapper objectMapper,
+            AlpacaProperties alpacaProperties,
+            PublisherService publisherService) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
         this.alpacaProperties = alpacaProperties;
+        this.publisherService = publisherService;
     }
 
     @Override
@@ -47,8 +54,7 @@ public class AlpacaBroker implements Broker{
             String body = response.getBody();
 
             if(statusCode.is2xxSuccessful()) {
-                OrderResponse orderResponse = objectMapper.readValue(body, OrderResponse.class);
-                log.info("[Alpaca Broker] Order placed successfully. Client Order ID: {}", orderResponse.getClientOrderId());
+                publishOrderCreatedEvent(order, body);
             }
             else{
                 if (statusCode.value() == 403){
@@ -64,6 +70,21 @@ public class AlpacaBroker implements Broker{
         }
         catch (RestClientException e) {
             log.error("[Alpaca Broker] Failed to perform HTTP request to the broker.");
+        }
+    }
+
+    private void publishOrderCreatedEvent(Order order, String responseBody) {
+        try {
+            TradeUpdateOrder alpacaOrder = objectMapper.readValue(responseBody, TradeUpdateOrder.class);
+            if (alpacaOrder == null || alpacaOrder.getId() == null || alpacaOrder.getId().isBlank()) {
+                log.error("[Alpaca Broker] Order was accepted but Alpaca returned no order ID.");
+                return;
+            }
+            publisherService.publishOrderEvent(OrderEvent.httpOrderCreated(order.getConnectionId(), alpacaOrder));
+            log.info("[Alpaca Broker] Order placed successfully. Client Order ID: {}", alpacaOrder.getClientOrderId());
+        } catch (Exception exception) {
+            // Do not re-submit an accepted Alpaca order if publishing its creation event fails.
+            log.error("[Alpaca Broker] Order was accepted but its creation event could not be published.");
         }
     }
 

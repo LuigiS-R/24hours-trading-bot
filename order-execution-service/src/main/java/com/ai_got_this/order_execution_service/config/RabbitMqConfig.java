@@ -33,6 +33,11 @@ public class RabbitMqConfig {
     }
 
     @Bean
+    public Queue orderEventsPersisterQueue() {
+        return new Queue(rabbitMqProperties.getOrderEventsPersisterQueue(), true);
+    }
+
+    @Bean
     public FanoutExchange orderEventsFanoutExchange() {
         return new FanoutExchange(rabbitMqProperties.getOrderEventsExchange(), true, false);
     }
@@ -45,5 +50,10 @@ public class RabbitMqConfig {
     @Bean
     public Binding orderEventsNotificationBinding(Queue orderEventsNotificationQueue, FanoutExchange orderEventsFanoutExchange) {
         return BindingBuilder.bind(orderEventsNotificationQueue).to(orderEventsFanoutExchange);
+    }
+
+    @Bean
+    public Binding orderEventsPersisterBinding(Queue orderEventsPersisterQueue, FanoutExchange orderEventsFanoutExchange) {
+        return BindingBuilder.bind(orderEventsPersisterQueue).to(orderEventsFanoutExchange);
     }
 }

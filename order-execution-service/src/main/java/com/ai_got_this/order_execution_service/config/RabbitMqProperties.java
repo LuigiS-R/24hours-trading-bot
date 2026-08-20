@@ -18,5 +18,7 @@ public class RabbitMqProperties {
     @NotBlank
     private String orderEventsNotificationQueue;
     @NotBlank
+    private String orderEventsPersisterQueue;
+    @NotBlank
     private String orderEventsExchange;
 }
