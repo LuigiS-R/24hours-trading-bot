@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 @Component
@@ -20,6 +21,9 @@ public class OrderValidator {
         }
         if (order.getConnectionId() == null || order.getConnectionId().isBlank()) {
             return Optional.of("connectionId is missing");
+        }
+        if (!isUuid(order.getConnectionId())) {
+            return Optional.of("connectionId must be a UUID");
         }
         if (order.getSymbol() == null || !SYMBOL_PATTERN.matcher(order.getSymbol()).matches()) {
             return Optional.of("symbol is missing or invalid");
@@ -44,6 +48,15 @@ public class OrderValidator {
 
     private boolean contains(Set<String> values, String value) {
         return values.contains(normalize(value));
+    }
+
+    private boolean isUuid(String value) {
+        try {
+            UUID.fromString(value);
+            return true;
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     private String normalize(String value) {

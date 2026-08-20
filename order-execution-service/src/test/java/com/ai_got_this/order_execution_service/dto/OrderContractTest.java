@@ -12,7 +12,7 @@ class OrderContractTest {
     void acceptsTheStrategyDecisionLimitOrderShape() throws Exception {
         Order order = new ObjectMapper().readValue("""
                 {
-                  "connectionId":"brokerage-connection-1",
+                  "connectionId":"cdb06f0b-e7ea-4a24-832e-23d9d7fd6f64",
                   "ticker":"AAPL",
                   "action":"BUY",
                   "quantity":2,
@@ -22,7 +22,7 @@ class OrderContractTest {
                 }
                 """, Order.class);
 
-        assertEquals("brokerage-connection-1", order.getConnectionId());
+        assertEquals("cdb06f0b-e7ea-4a24-832e-23d9d7fd6f64", order.getConnectionId());
         assertEquals("AAPL", order.getSymbol());
         assertEquals("BUY", order.getSide());
         assertEquals(2, order.getQuantity());

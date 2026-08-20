@@ -38,6 +38,7 @@ class OrderValidatorTest {
         return Stream.of(
                 new InvalidOrder(order -> order.setConnectionId(null), "connectionId is missing"),
                 new InvalidOrder(order -> order.setConnectionId(" "), "connectionId is missing"),
+                new InvalidOrder(order -> order.setConnectionId("brokerage-connection-1"), "connectionId must be a UUID"),
                 new InvalidOrder(order -> order.setSymbol(null), "symbol is missing or invalid"),
                 new InvalidOrder(order -> order.setSymbol(" "), "symbol is missing or invalid"),
                 new InvalidOrder(order -> order.setSymbol("AAPL$"), "symbol is missing or invalid"),
@@ -57,7 +58,7 @@ class OrderValidatorTest {
 
     private static Order validOrder() {
         Order order = new Order();
-        order.setConnectionId("brokerage-connection-1");
+        order.setConnectionId("cdb06f0b-e7ea-4a24-832e-23d9d7fd6f64");
         order.setSymbol("AAPL");
         order.setQuantity(1);
         order.setSide("buy");

@@ -48,7 +48,7 @@ class ListenerServiceTest {
 
     private static Order validOrder() {
         Order order = new Order();
-        order.setConnectionId("brokerage-connection-1");
+        order.setConnectionId("cdb06f0b-e7ea-4a24-832e-23d9d7fd6f64");
         order.setSymbol("AAPL");
         order.setQuantity(1);
         order.setSide("buy");

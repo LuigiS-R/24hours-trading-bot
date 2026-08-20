@@ -1,6 +1,7 @@
 package com.ai_got_this.order_execution_service.service;
 
 import com.ai_got_this.order_execution_service.config.AlpacaProperties;
+import com.ai_got_this.order_execution_service.client.AccountServiceClient;
 import com.ai_got_this.order_execution_service.dto.OrderEvent;
 import com.ai_got_this.order_execution_service.dto.Order;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,7 @@ import java.math.BigDecimal;
 class AlpacaBrokerTest {
     private final RestTemplate restTemplate = mock(RestTemplate.class);
     private final PublisherService publisherService = mock(PublisherService.class);
+    private final AccountServiceClient accountServiceClient = mock(AccountServiceClient.class);
     private final AlpacaProperties properties = new AlpacaProperties();
     private final Order order = new Order();
     private AlpacaBroker broker;
@@ -50,7 +52,7 @@ class AlpacaBrokerTest {
         order.setType("limit");
         order.setLimitPrice(BigDecimal.valueOf(123.45));
         order.setConnectionId("cdb06f0b-e7ea-4a24-832e-23d9d7fd6f64");
-        broker = new AlpacaBroker(restTemplate, new ObjectMapper(), properties, publisherService);
+        broker = new AlpacaBroker(restTemplate, new ObjectMapper(), properties, publisherService, accountServiceClient);
     }
 
     @Test
@@ -70,6 +72,9 @@ class AlpacaBrokerTest {
                           "updated_at":"2026-08-20T00:00:00Z"
                         }
                         """));
+        when(accountServiceClient.brokerCredential(java.util.UUID.fromString(order.getConnectionId())))
+                .thenReturn(new AccountServiceClient.BrokerCredential(
+                        java.util.UUID.fromString(order.getConnectionId()), "oauth-access-token"));
 
         broker.placeOrder(order);
 
@@ -83,8 +88,7 @@ class AlpacaBrokerTest {
                 "limit_price", "123.45",
                 "time_in_force", "day"
         ), request.getValue().getBody());
-        assertEquals("key", request.getValue().getHeaders().getFirst("APCA-API-KEY-ID"));
-        assertEquals("secret", request.getValue().getHeaders().getFirst("APCA-API-SECRET-KEY"));
+        assertEquals("Bearer oauth-access-token", request.getValue().getHeaders().getFirst("Authorization"));
         assertEquals("application/json", request.getValue().getHeaders().getContentType().toString());
         verify(publisherService).publishOrderEvent(argThat(event ->
                 "HTTP".equals(event.getStream())
@@ -96,6 +100,7 @@ class AlpacaBrokerTest {
     @ParameterizedTest
     @ValueSource(ints = {400, 401, 403, 422, 429, 500})
     void doesNotRetryOrConvertNonSuccessfulBrokerResponsesIntoSuccess(int status) {
+        stubBrokerCredential();
         when(restTemplate.exchange(eq(properties.getOrderEndpoint()), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
                 .thenReturn(ResponseEntity.status(status).body("{\"error\":\"rejected\"}"));
 
@@ -106,6 +111,7 @@ class AlpacaBrokerTest {
 
     @Test
     void containsRestClientFailuresAtTheBrokerBoundary() {
+        stubBrokerCredential();
         when(restTemplate.exchange(eq(properties.getOrderEndpoint()), eq(HttpMethod.POST), any(HttpEntity.class), eq(String.class)))
                 .thenThrow(new RestClientException("network unavailable"));
 
@@ -116,6 +122,7 @@ class AlpacaBrokerTest {
 
     @Test
     void doesNotExposeConfiguredCredentialsWhenTheBrokerClientFails() {
+        stubBrokerCredential();
         properties.setSecret("test-only-secret");
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         Logger logger = (Logger) LoggerFactory.getLogger(AlpacaBroker.class);
@@ -134,5 +141,11 @@ class AlpacaBrokerTest {
         finally {
             logger.detachAppender(appender);
         }
+    }
+
+    private void stubBrokerCredential() {
+        when(accountServiceClient.brokerCredential(java.util.UUID.fromString(order.getConnectionId())))
+                .thenReturn(new AccountServiceClient.BrokerCredential(
+                        java.util.UUID.fromString(order.getConnectionId()), "oauth-access-token"));
     }
 }

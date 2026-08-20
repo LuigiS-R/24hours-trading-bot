@@ -1,6 +1,7 @@
 package com.ai_got_this.order_execution_service.service;
 
 import com.ai_got_this.order_execution_service.config.AlpacaProperties;
+import com.ai_got_this.order_execution_service.client.AccountServiceClient;
 import com.ai_got_this.order_execution_service.dto.Order;
 import com.ai_got_this.order_execution_service.dto.OrderEvent;
 import com.ai_got_this.order_execution_service.dto.TradeUpdateOrder;
@@ -19,6 +20,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 @Slf4j
@@ -28,26 +30,33 @@ public class AlpacaBroker implements Broker{
     private ObjectMapper objectMapper;
     private AlpacaProperties alpacaProperties;
     private PublisherService publisherService;
+    private AccountServiceClient accountServiceClient;
 
     public AlpacaBroker(
             RestTemplate restTemplate,
             ObjectMapper objectMapper,
             AlpacaProperties alpacaProperties,
-            PublisherService publisherService) {
+            PublisherService publisherService,
+            AccountServiceClient accountServiceClient) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
         this.alpacaProperties = alpacaProperties;
         this.publisherService = publisherService;
+        this.accountServiceClient = accountServiceClient;
     }
 
     @Override
     public void placeOrder(Order order) {
         String url = alpacaProperties.getOrderEndpoint();
+        String accessToken = brokerAccessToken(order);
+        if (accessToken == null) {
+            return;
+        }
         try {
             ResponseEntity<String> response = restTemplate.exchange(
                     url,
                     HttpMethod.POST,
-                    new HttpEntity<>(toAlpacaOrderRequest(order), requestHeaders()),
+                    new HttpEntity<>(toAlpacaOrderRequest(order), requestHeaders(accessToken)),
                     String.class
             );
             HttpStatusCode statusCode = response.getStatusCode();
@@ -73,6 +82,23 @@ public class AlpacaBroker implements Broker{
         }
     }
 
+    private String brokerAccessToken(Order order) {
+        UUID connectionId;
+        try {
+            connectionId = UUID.fromString(order.getConnectionId());
+        } catch (IllegalArgumentException exception) {
+            log.error("[Alpaca Broker] Order has an invalid connection ID.");
+            return null;
+        }
+
+        AccountServiceClient.BrokerCredential credential = accountServiceClient.brokerCredential(connectionId);
+        if (credential == null || credential.accessToken() == null || credential.accessToken().isBlank()) {
+            log.error("[Alpaca Broker] Account service returned no broker credential.");
+            return null;
+        }
+        return credential.accessToken();
+    }
+
     private void publishOrderCreatedEvent(Order order, String responseBody) {
         try {
             TradeUpdateOrder alpacaOrder = objectMapper.readValue(responseBody, TradeUpdateOrder.class);
@@ -88,12 +114,11 @@ public class AlpacaBroker implements Broker{
         }
     }
 
-    private HttpHeaders requestHeaders() {
+    private HttpHeaders requestHeaders(String accessToken) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON));
-        headers.set("APCA-API-KEY-ID", alpacaProperties.getKey());
-        headers.set("APCA-API-SECRET-KEY", alpacaProperties.getSecret());
+        headers.setBearerAuth(accessToken);
         return headers;
     }
 
