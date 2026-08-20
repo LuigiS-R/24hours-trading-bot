@@ -648,3 +648,23 @@ Implement:
 10. All pages work on desktop and mobile, are keyboard accessible, and maintain the persistent `PAPER TRADING` indication.
 11. The application builds successfully with `npm run build`.
 12. The README explains local setup, environment variables, Keycloak setup assumptions, routing/deployment prerequisite, and test commands.
+## Running the Automated Frontend Tests
+
+To run the Vitest + Happy-DOM test suite:
+```bash
+cd frontend/web
+npm test
+```
+
+### Test Options
+```bash
+# Run tests in interactive watch mode
+npx vitest
+
+# Run tests with code coverage report
+npx vitest run --coverage
+```
+
+### Test Coverage Breakdown
+- **API Client Suite (`src/api/accountsClient.test.ts`):** Verifies Bearer token headers, `Idempotency-Key` headers on mutating requests, and sanitized error mapping (403 / 502).
+- **Component Suite (`src/pages/Pages.test.tsx`):** Verifies login disclaimers, empty dashboard projections, and OAuth failure fallback state rendering.
