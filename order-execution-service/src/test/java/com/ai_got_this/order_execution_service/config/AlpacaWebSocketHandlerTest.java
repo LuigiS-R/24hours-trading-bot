@@ -90,6 +90,14 @@ class AlpacaWebSocketHandlerTest {
         verify(closedCallback).run();
     }
 
+    @Test
+    void treatsTransportErrorsAsClosedSocketsSoTheRegistryCanReconnect() throws Exception {
+        handler.handleTransportError(session, new IllegalStateException("network failure"));
+
+        verify(session).close();
+        verify(closedCallback).run();
+    }
+
     private static final class TestableHandler extends AlpacaWebSocketHandler {
         private TestableHandler(
                 ObjectMapper objectMapper,

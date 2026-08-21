@@ -82,6 +82,22 @@ class TradeUpdateConnectionRegistryTest {
         verify(session).close(CloseStatus.NORMAL);
     }
 
+    @Test
+    void closesALateSocketWhenACloseEventArrivesDuringItsHandshake() throws Exception {
+        UUID connectionId = UUID.randomUUID();
+        NonCancellingFuture<WebSocketSession> pendingHandshake = new NonCancellingFuture<>();
+        webSocketClient.queuedFutures.add(pendingHandshake);
+        when(accountServiceClient.brokerCredential(connectionId))
+                .thenReturn(new AccountServiceClient.BrokerCredential(connectionId, "oauth-token"));
+
+        registry.openConnection(connectionId);
+        registry.closeConnection(connectionId);
+        pendingHandshake.complete(session);
+
+        assertThat(registry.activeConnectionIds()).isEmpty();
+        verify(session).close(CloseStatus.NORMAL);
+    }
+
     private static AlpacaProperties properties() {
         AlpacaProperties properties = new AlpacaProperties();
         properties.setStreamUrl("wss://broker.invalid/stream");
@@ -128,6 +144,13 @@ class TradeUpdateConnectionRegistryTest {
             if (handlers.size() == 12) {
                 allBatchesStarted.countDown();
             }
+        }
+    }
+
+    private static final class NonCancellingFuture<T> extends CompletableFuture<T> {
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            return false;
         }
     }
 }

@@ -82,6 +82,12 @@ public class AlpacaWebSocketHandler extends BinaryWebSocketHandler {
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
         log.error("Alpaca trade-update WebSocket transport error for connection {}: {}", connectionId, exception.getMessage());
+        try {
+            session.close();
+        } catch (IOException ignored) {
+            // The transport has already failed; the registry still owns reconnect policy.
+        }
+        closedCallback.run();
     }
 
     private void processMessage(WebSocketSession session, JsonNode alpacaMessage) {

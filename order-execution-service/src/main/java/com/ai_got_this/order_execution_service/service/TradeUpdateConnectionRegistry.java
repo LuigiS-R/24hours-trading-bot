@@ -6,6 +6,7 @@ import com.ai_got_this.order_execution_service.config.AlpacaWebSocketHandler;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -15,6 +16,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -29,6 +33,8 @@ import tools.jackson.databind.ObjectMapper;
 @Slf4j
 public class TradeUpdateConnectionRegistry {
     static final int STARTUP_BATCH_SIZE = 10;
+    private static final Duration INITIAL_RECONNECT_DELAY = Duration.ofSeconds(5);
+    private static final Duration MAX_RECONNECT_DELAY = Duration.ofMinutes(1);
 
     private final AccountServiceClient accountServiceClient;
     private final WebSocketClient webSocketClient;
@@ -38,6 +44,11 @@ public class TradeUpdateConnectionRegistry {
     private final ConcurrentMap<UUID, ManagedConnection> activeConnections = new ConcurrentHashMap<>();
     private final ExecutorService bootstrapExecutor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "alpaca-stream-bootstrap");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final ScheduledExecutorService reconnectExecutor = Executors.newScheduledThreadPool(2, runnable -> {
+        Thread thread = new Thread(runnable, "alpaca-stream-reconnect");
         thread.setDaemon(true);
         return thread;
     });
@@ -81,6 +92,9 @@ public class TradeUpdateConnectionRegistry {
 
     /** Opens a stream for a newly active connection after resolving only that connection's credential. */
     public void openConnection(UUID connectionId) {
+        if (activeConnections.containsKey(connectionId)) {
+            return;
+        }
         try {
             AccountServiceClient.BrokerCredential credential = accountServiceClient.brokerCredential(connectionId);
             if (credential == null || credential.accessToken() == null || credential.accessToken().isBlank()) {
@@ -94,13 +108,29 @@ public class TradeUpdateConnectionRegistry {
         }
     }
 
-    /** Closes and removes the stream, including any in-progress connection attempt. */
+    /**
+     * Invalidates a connection generation before closing it. Any late completion
+     * from a pending handshake sees that its registry identity is no longer current
+     * and immediately closes its session rather than retaining or reconnecting it.
+     */
     public void closeConnection(UUID connectionId) {
         ManagedConnection managedConnection = activeConnections.remove(connectionId);
-        if (managedConnection != null) {
-            managedConnection.close();
-            log.info("Closed Alpaca trade-update stream for connection {}", connectionId);
+        if (managedConnection == null) {
+            return;
         }
+
+        WebSocketSession session;
+        synchronized (managedConnection) {
+            managedConnection.desiredOpen = false;
+            cancel(managedConnection.reconnectTask);
+            managedConnection.reconnectTask = null;
+            cancel(managedConnection.pendingConnection);
+            managedConnection.pendingConnection = null;
+            session = managedConnection.session;
+            managedConnection.session = null;
+        }
+        closeQuietly(session);
+        log.info("Closed Alpaca trade-update stream for connection {}", connectionId);
     }
 
     Set<UUID> activeConnectionIds() {
@@ -114,48 +144,142 @@ public class TradeUpdateConnectionRegistry {
         }
 
         UUID connectionId = credential.connectionId();
-        ManagedConnection managedConnection = new ManagedConnection();
+        ManagedConnection managedConnection = new ManagedConnection(credential.accessToken());
         if (activeConnections.putIfAbsent(connectionId, managedConnection) != null) {
             return CompletableFuture.completedFuture(null);
+        }
+        return startConnection(connectionId, managedConnection);
+    }
+
+    private CompletableFuture<Void> startConnection(UUID connectionId, ManagedConnection managedConnection) {
+        long attempt;
+        synchronized (managedConnection) {
+            if (!isCurrentAndDesired(connectionId, managedConnection) || managedConnection.connecting) {
+                return CompletableFuture.completedFuture(null);
+            }
+            managedConnection.connecting = true;
+            managedConnection.streamClosed = false;
+            attempt = ++managedConnection.attemptGeneration;
+            cancel(managedConnection.reconnectTask);
+            managedConnection.reconnectTask = null;
         }
 
         AlpacaWebSocketHandler handler = new AlpacaWebSocketHandler(
                 connectionId,
-                credential.accessToken(),
+                managedConnection.oauthToken,
                 objectMapper,
                 publisherService,
                 alpacaProperties,
-                () -> activeConnections.remove(connectionId, managedConnection));
+                () -> onSocketClosed(connectionId, managedConnection, attempt));
+        final CompletableFuture<WebSocketSession> connectionFuture;
         try {
-            CompletableFuture<WebSocketSession> future = webSocketClient.execute(
-                    handler, URI.create(alpacaProperties.getStreamUrl()).toString());
-            managedConnection.setFuture(future);
-            return future.handle((session, error) -> {
-                if (error != null) {
-                    activeConnections.remove(connectionId, managedConnection);
-                    log.warn("Unable to establish Alpaca trade-update stream for connection {}", connectionId);
-                } else {
-                    managedConnection.setSession(session);
-                    if (activeConnections.get(connectionId) != managedConnection) {
-                        closeQuietly(session);
-                    }
-                }
-                return null;
-            });
+            connectionFuture = webSocketClient.execute(handler, URI.create(alpacaProperties.getStreamUrl()).toString());
         } catch (RuntimeException exception) {
-            activeConnections.remove(connectionId, managedConnection);
-            log.warn("Unable to initiate Alpaca trade-update stream for connection {}", connectionId);
+            connectionAttemptFailed(connectionId, managedConnection, attempt);
             return CompletableFuture.completedFuture(null);
         }
+
+        synchronized (managedConnection) {
+            managedConnection.pendingConnection = connectionFuture;
+        }
+        return connectionFuture.handle((session, error) -> {
+            if (error != null) {
+                connectionAttemptFailed(connectionId, managedConnection, attempt);
+                return null;
+            }
+
+            boolean retain;
+            synchronized (managedConnection) {
+                managedConnection.connecting = false;
+                managedConnection.pendingConnection = null;
+                retain = isCurrentAndDesired(connectionId, managedConnection)
+                        && managedConnection.attemptGeneration == attempt
+                        && !managedConnection.streamClosed;
+                if (retain) {
+                    managedConnection.session = session;
+                    managedConnection.consecutiveFailures = 0;
+                }
+            }
+            if (!retain) {
+                closeQuietly(session);
+            }
+            return null;
+        });
+    }
+
+    private void onSocketClosed(UUID connectionId, ManagedConnection managedConnection, long attempt) {
+        synchronized (managedConnection) {
+            if (!isCurrentAndDesired(connectionId, managedConnection)
+                    || managedConnection.attemptGeneration != attempt) {
+                return;
+            }
+            managedConnection.streamClosed = true;
+            managedConnection.session = null;
+            managedConnection.connecting = false;
+            scheduleReconnect(connectionId, managedConnection);
+        }
+    }
+
+    private void connectionAttemptFailed(UUID connectionId, ManagedConnection managedConnection, long attempt) {
+        synchronized (managedConnection) {
+            if (managedConnection.attemptGeneration != attempt) {
+                return;
+            }
+            managedConnection.connecting = false;
+            managedConnection.pendingConnection = null;
+            if (isCurrentAndDesired(connectionId, managedConnection)) {
+                scheduleReconnect(connectionId, managedConnection);
+            }
+        }
+    }
+
+    private void scheduleReconnect(UUID connectionId, ManagedConnection managedConnection) {
+        if (managedConnection.reconnectTask != null && !managedConnection.reconnectTask.isDone()) {
+            return;
+        }
+        Duration delay = reconnectDelay(managedConnection.consecutiveFailures++);
+        log.info("Scheduling Alpaca trade-update reconnect for connection {} in {} seconds",
+                connectionId, delay.toSeconds());
+        managedConnection.reconnectTask = reconnectExecutor.schedule(
+                () -> startConnection(connectionId, managedConnection),
+                delay.toMillis(),
+                TimeUnit.MILLISECONDS);
+    }
+
+    private static Duration reconnectDelay(int consecutiveFailures) {
+        long multiplier = 1L << Math.min(consecutiveFailures, 4);
+        return Duration.ofSeconds(Math.min(
+                INITIAL_RECONNECT_DELAY.toSeconds() * multiplier,
+                MAX_RECONNECT_DELAY.toSeconds()));
+    }
+
+    private boolean isCurrentAndDesired(UUID connectionId, ManagedConnection managedConnection) {
+        return managedConnection.desiredOpen && activeConnections.get(connectionId) == managedConnection;
     }
 
     @PreDestroy
     void closeAllConnections() {
         activeConnections.keySet().forEach(this::closeConnection);
         bootstrapExecutor.shutdownNow();
+        reconnectExecutor.shutdownNow();
+    }
+
+    private static void cancel(CompletableFuture<WebSocketSession> future) {
+        if (future != null) {
+            future.cancel(true);
+        }
+    }
+
+    private static void cancel(ScheduledFuture<?> future) {
+        if (future != null) {
+            future.cancel(false);
+        }
     }
 
     private static void closeQuietly(WebSocketSession session) {
+        if (session == null) {
+            return;
+        }
         try {
             session.close(CloseStatus.NORMAL);
         } catch (IOException ignored) {
@@ -164,24 +288,18 @@ public class TradeUpdateConnectionRegistry {
     }
 
     private static final class ManagedConnection {
-        private CompletableFuture<WebSocketSession> future;
+        private final String oauthToken;
+        private boolean desiredOpen = true;
+        private boolean connecting;
+        private boolean streamClosed;
+        private int consecutiveFailures;
+        private long attemptGeneration;
+        private CompletableFuture<WebSocketSession> pendingConnection;
         private WebSocketSession session;
+        private ScheduledFuture<?> reconnectTask;
 
-        synchronized void setFuture(CompletableFuture<WebSocketSession> future) {
-            this.future = future;
-        }
-
-        synchronized void setSession(WebSocketSession session) {
-            this.session = session;
-        }
-
-        synchronized void close() {
-            if (future != null) {
-                future.cancel(true);
-            }
-            if (session != null) {
-                closeQuietly(session);
-            }
+        private ManagedConnection(String oauthToken) {
+            this.oauthToken = oauthToken;
         }
     }
 }
