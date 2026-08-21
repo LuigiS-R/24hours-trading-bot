@@ -37,15 +37,20 @@ def test_fetch_portfolio_returns_http_response_json(monkeypatch, portfolio):
         def json(self):
             return portfolio
 
-    def fake_get(endpoint, timeout):
-        calls.append((endpoint, timeout))
+    def fake_get(endpoint, *, headers, timeout):
+        calls.append((endpoint, headers, timeout))
         return Response()
 
+    monkeypatch.setattr(main.keycloak_client, "access_token", lambda: "strategy-jwt")
     monkeypatch.setattr(main.httpx, "get", fake_get)
 
     assert main.fetch_portfolio() == portfolio
     assert calls == [
-        (main.PORTFOLIO_SERVICE_ENDPOINT, main.PORTFOLIO_SERVICE_TIMEOUT_SECONDS)
+        (
+            main.PORTFOLIO_SERVICE_ENDPOINT,
+            {"Authorization": "Bearer strategy-jwt"},
+            main.PORTFOLIO_SERVICE_TIMEOUT_SECONDS,
+        )
     ]
 
 
@@ -63,6 +68,7 @@ def test_fetch_portfolio_returns_none_for_unavailable_or_invalid_response(monkey
             if isinstance(error, ValueError):
                 raise error
 
+    monkeypatch.setattr(main.keycloak_client, "access_token", lambda: "strategy-jwt")
     monkeypatch.setattr(main.httpx, "get", lambda *_, **__: Response())
 
     assert main.fetch_portfolio() is None

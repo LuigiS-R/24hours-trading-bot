@@ -4,6 +4,8 @@ import json
 import httpx
 import pika
 
+from keycloak import KeycloakAuthenticationError, KeycloakClientCredentials
+
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
@@ -13,27 +15,29 @@ RABBITMQ_PREDICTIONS_QUEUE = os.getenv("RABBITMQ_PREDICTIONS_QUEUE", "prediction
 RABBITMQ_APPROVED_ORDERS_QUEUE = os.getenv(
     "RABBITMQ_APPROVED_ORDERS_QUEUE", "orders.approved"
 )
-PORTFOLIO_SERVICE_ENDPOINT = os.getenv(
-    "PORTFOLIO_SERVICE_ENDPOINT", "http://127.0.0.1:8003/portfolio"
-)
+ACCOUNT_SERVICE_BASE_URL = os.getenv("ACCOUNT_SERVICE_BASE_URL", "http://localhost:8081").rstrip("/")
+PORTFOLIO_SERVICE_ENDPOINT = f"{ACCOUNT_SERVICE_BASE_URL}/internal/v1/accounts/portfolio"
 PORTFOLIO_SERVICE_TIMEOUT_SECONDS = float(
     os.getenv("PORTFOLIO_SERVICE_TIMEOUT_SECONDS", "5.0")
 )
+keycloak_client = KeycloakClientCredentials.from_environment()
 
 # Decision Parameters
 CONFIDENCE_THRESHOLD = 0.65   # Only trade if model is >= 65% confident
 MAX_PORTFOLIO_RISK_PCT = 0.05 # Max 5% of total capital per trade
 
 def fetch_portfolio():
-    """Retrieve the current portfolio snapshot from the portfolio service."""
+    """Retrieve the current portfolio snapshot using Strategy's service JWT."""
     try:
+        access_token = keycloak_client.access_token()
         response = httpx.get(
             PORTFOLIO_SERVICE_ENDPOINT,
+            headers={"Authorization": f"Bearer {access_token}"},
             timeout=PORTFOLIO_SERVICE_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
         return response.json()
-    except (httpx.HTTPError, ValueError) as error:
+    except (KeycloakAuthenticationError, httpx.HTTPError, ValueError) as error:
         print(f" [Portfolio] Unable to retrieve portfolio: {error}")
         return None
 

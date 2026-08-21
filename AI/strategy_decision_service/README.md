@@ -19,18 +19,30 @@ All RabbitMQ connection and resource names are environment-configured:
 | `RABBITMQ_PREDICTIONS_QUEUE` | `predictions` | Queue consumed for model predictions |
 | `RABBITMQ_APPROVED_ORDERS_QUEUE` | `orders.approved` | Queue receiving approved orders (matches Order Execution Service) |
 
-Portfolio retrieval is separately configured:
+Portfolio retrieval is performed through Account Service's protected internal API:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PORTFOLIO_SERVICE_ENDPOINT` | `http://127.0.0.1:8003/portfolio` | Placeholder portfolio-service `GET` endpoint |
+| `ACCOUNT_SERVICE_BASE_URL` | `http://localhost:8081` | Account Service base URL |
 | `PORTFOLIO_SERVICE_TIMEOUT_SECONDS` | `5.0` | Portfolio HTTP request timeout |
+
+Keycloak client-credentials authentication is required for every Account Service
+request. These values identify the confidential `strategy-service` Keycloak
+client; `KEYCLOAK_CLIENT_SECRET` must be injected through a secret manager or
+deployment environment and must never be committed.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `KEYCLOAK_TOKEN_URL` | Yes | `https://<keycloak>/realms/<realm>/protocol/openid-connect/token` |
+| `KEYCLOAK_CLIENT_ID` | Yes | Strategy's confidential client ID, e.g. `strategy-service` |
+| `KEYCLOAK_CLIENT_SECRET` | Yes | Strategy client's secret |
+| `KEYCLOAK_TIMEOUT_SECONDS` | No (`5.0`) | Token-request timeout |
 
 ## Run
 
 ```sh
 pip install -r requirements.txt
-PORTFOLIO_SERVICE_ENDPOINT=http://portfolio-service:8080/portfolio RABBITMQ_VHOST=/trading RABBITMQ_PREDICTIONS_QUEUE=model.predictions python main.py
+ACCOUNT_SERVICE_BASE_URL=http://account-service:8081 KEYCLOAK_TOKEN_URL=http://keycloak:8080/realms/trading/protocol/openid-connect/token KEYCLOAK_CLIENT_ID=strategy-service KEYCLOAK_CLIENT_SECRET=... RABBITMQ_VHOST=/trading RABBITMQ_PREDICTIONS_QUEUE=model.predictions python main.py
 ```
 
 Both queues are declared as durable by the worker.
@@ -71,8 +83,10 @@ default exchange.
 
 ## Portfolio data
 
-For every prediction, the worker sends an HTTP `GET` request to
-`PORTFOLIO_SERVICE_ENDPOINT`. The response is assumed to have this shape:
+For every prediction, the worker obtains a cached Keycloak service-account JWT
+through the Client Credentials grant and sends it to
+`GET {ACCOUNT_SERVICE_BASE_URL}/internal/v1/accounts/portfolio` as
+`Authorization: Bearer <token>`. The response is assumed to have this shape:
 
 ```json
 {
