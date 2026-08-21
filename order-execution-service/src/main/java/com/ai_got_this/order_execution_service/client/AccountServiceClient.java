@@ -1,6 +1,7 @@
 package com.ai_got_this.order_execution_service.client;
 
 import com.ai_got_this.order_execution_service.config.AccountServiceProperties;
+import com.ai_got_this.order_execution_service.service.KeycloakService;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.core.ParameterizedTypeReference;
@@ -16,10 +17,15 @@ import org.springframework.web.client.RestTemplate;
 public class AccountServiceClient {
     private final RestTemplate restTemplate;
     private final AccountServiceProperties properties;
+    private final KeycloakService keycloakService;
 
-    public AccountServiceClient(RestTemplate restTemplate, AccountServiceProperties properties) {
+    public AccountServiceClient(
+            RestTemplate restTemplate,
+            AccountServiceProperties properties,
+            KeycloakService keycloakService) {
         this.restTemplate = restTemplate;
         this.properties = properties;
+        this.keycloakService = keycloakService;
     }
 
     public BrokerCredential brokerCredential(UUID connectionId) {
@@ -51,7 +57,7 @@ public class AccountServiceClient {
     private HttpHeaders serviceHeaders() {
         HttpHeaders headers = new HttpHeaders();
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
-        headers.setBearerAuth(properties.getServiceToken());
+        headers.setBearerAuth(keycloakService.accessToken());
         return headers;
     }
 
