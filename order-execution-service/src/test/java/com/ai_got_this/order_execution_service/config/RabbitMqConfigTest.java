@@ -15,16 +15,19 @@ class RabbitMqConfigTest {
         properties.setOrderEventsNotificationQueue("notification-events");
         properties.setOrderEventsPersisterQueue("persister-events");
         properties.setOrderEventsExchange("order-events");
+        properties.setConnectionEventsQueue("connection.events");
         RabbitMqConfig config = new RabbitMqConfig(properties, new ApplicationConfigurationValidator(validAlpacaProperties(), properties));
 
         Queue portfolioQueue = config.orderEventsPortfolioQueue();
         Queue notificationQueue = config.orderEventsNotificationQueue();
         Queue persisterQueue = config.orderEventsPersisterQueue();
+        Queue connectionEventsQueue = config.connectionEventsQueue();
         FanoutExchange exchange = config.orderEventsFanoutExchange();
 
         assertEquals("portfolio-events", portfolioQueue.getName());
         assertEquals("notification-events", notificationQueue.getName());
         assertEquals("persister-events", persisterQueue.getName());
+        assertEquals("connection.events", connectionEventsQueue.getName());
         assertEquals("order-events", exchange.getName());
         assertTrue(portfolioQueue.isDurable());
         assertTrue(notificationQueue.isDurable());
@@ -35,8 +38,6 @@ class RabbitMqConfigTest {
 
     private static AlpacaProperties validAlpacaProperties() {
         AlpacaProperties properties = new AlpacaProperties();
-        properties.setKey("key");
-        properties.setSecret("secret");
         properties.setStreamUrl("wss://broker.invalid/stream");
         properties.setSubscriptionMessage("{\"action\":\"listen\",\"data\":{\"streams\":[\"trade_updates\"]}}");
         properties.setOrderEndpoint("https://broker.invalid/v2/orders");

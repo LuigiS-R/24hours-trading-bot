@@ -3,6 +3,7 @@ package com.ai_got_this.order_execution_service.client;
 import com.ai_got_this.order_execution_service.config.AccountServiceProperties;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -34,6 +35,19 @@ public class AccountServiceClient {
         }
     }
 
+    public List<ActiveConnectionCredential> activeConnectionCredentials() {
+        try {
+            List<ActiveConnectionCredential> credentials = restTemplate.exchange(
+                    properties.getBaseUrl() + "/internal/v1/order-execution/active-connection-credentials",
+                    HttpMethod.GET,
+                    new HttpEntity<Void>(serviceHeaders()),
+                    new ParameterizedTypeReference<List<ActiveConnectionCredential>>() {}).getBody();
+            return credentials == null ? List.of() : credentials;
+        } catch (RestClientException exception) {
+            throw new IllegalStateException("Unable to obtain active broker credentials for trade-update streaming.", exception);
+        }
+    }
+
     private HttpHeaders serviceHeaders() {
         HttpHeaders headers = new HttpHeaders();
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
@@ -42,5 +56,8 @@ public class AccountServiceClient {
     }
 
     public record BrokerCredential(UUID connectionId, String accessToken) {
+    }
+
+    public record ActiveConnectionCredential(UUID connectionId, String accessToken) {
     }
 }

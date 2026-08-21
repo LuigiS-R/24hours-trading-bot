@@ -8,7 +8,6 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.TaskScheduler;
-import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.client.WebSocketConnectionManager;
 
@@ -17,7 +16,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.ScheduledFuture;
 
-@Component
 @Slf4j
 public class AlpacaWebSocketReconnectSupervisor {
     private static final Duration INITIAL_RECONNECT_DELAY = Duration.ofSeconds(5);

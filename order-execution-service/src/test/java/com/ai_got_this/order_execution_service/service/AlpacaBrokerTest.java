@@ -44,8 +44,6 @@ class AlpacaBrokerTest {
     @BeforeEach
     void setUp() {
         properties.setOrderEndpoint("https://broker.invalid/v2/orders");
-        properties.setKey("key");
-        properties.setSecret("secret");
         order.setSymbol("AAPL");
         order.setQuantity(3);
         order.setSide("buy");
@@ -121,9 +119,8 @@ class AlpacaBrokerTest {
     }
 
     @Test
-    void doesNotExposeConfiguredCredentialsWhenTheBrokerClientFails() {
+    void doesNotExposeBrokerFailureContentsWhenTheBrokerClientFails() {
         stubBrokerCredential();
-        properties.setSecret("test-only-secret");
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         Logger logger = (Logger) LoggerFactory.getLogger(AlpacaBroker.class);
         appender.start();

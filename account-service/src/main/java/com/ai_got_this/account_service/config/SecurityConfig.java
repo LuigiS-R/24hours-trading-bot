@@ -28,6 +28,8 @@ public class SecurityConfig {
                                 authorize
                                         .requestMatchers("/api/v1/alpaca/oauth/callback")
                                         .permitAll()
+                                        .requestMatchers("/internal/v1/order-execution/active-connection-credentials")
+                                        .hasRole("ORDER_EXECUTION_SERVICE")
                                         .requestMatchers("/internal/**")
                                         .hasAnyRole("RISK_SERVICE", "STRATEGY_SERVICE", "ORDER_EXECUTION_SERVICE")
                                         .anyRequest()

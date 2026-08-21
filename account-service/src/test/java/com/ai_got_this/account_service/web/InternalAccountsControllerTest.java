@@ -159,7 +159,29 @@ class InternalAccountsControllerTest {
                 new InternalAccountsController.ConnectionReference(
                         pending.getConnectionId(), AlpacaConnection.ConnectionStatus.PENDING),
                 new InternalAccountsController.ConnectionReference(
-                        connected.getConnectionId(), AlpacaConnection.ConnectionStatus.CONNECTED));
+                connected.getConnectionId(), AlpacaConnection.ConnectionStatus.CONNECTED));
+    }
+
+    @Test
+    void activeConnectionCredentialsReturnsOnlyConnectedAccountsWithResolvableSecrets() {
+        AlpacaConnection connected = connection(AlpacaConnection.ConnectionStatus.CONNECTED);
+        connected.setSecretReference("secret://alpaca/connected");
+        AlpacaConnection disconnected = connection(AlpacaConnection.ConnectionStatus.DISCONNECTED);
+        disconnected.setSecretReference("secret://alpaca/disconnected");
+        AlpacaConnection missingSecret = connection(AlpacaConnection.ConnectionStatus.CONNECTED);
+        missingSecret.setSecretReference("secret://alpaca/missing");
+        when(alpacaConnectionRepository.findAll()).thenReturn(List.of(connected, disconnected, missingSecret));
+        when(secretStore.read("secret://alpaca/connected")).thenReturn("connected-oauth-token");
+        when(secretStore.read("secret://alpaca/missing")).thenReturn(null);
+
+        List<InternalAccountsController.ActiveConnectionCredential> credentials = controller()
+                .activeConnectionCredentials();
+
+        assertThat(credentials).containsExactly(
+                new InternalAccountsController.ActiveConnectionCredential(
+                        connected.getConnectionId(), "connected-oauth-token"));
+        org.mockito.Mockito.verify(secretStore, org.mockito.Mockito.never())
+                .read("secret://alpaca/disconnected");
     }
 
     private InternalAccountsController controller() {

@@ -1,6 +1,7 @@
 package com.ai_got_this.order_execution_service.service;
 
 import com.ai_got_this.order_execution_service.config.RabbitMqProperties;
+import com.ai_got_this.order_execution_service.dto.ConnectionEvent;
 import com.ai_got_this.order_execution_service.dto.Order;
 import org.junit.jupiter.api.Test;
 import ch.qos.logback.classic.Logger;
@@ -18,7 +19,7 @@ class ListenerServiceTest {
     @Test
     void forwardsEachApprovedOrderToTheBrokerExactlyOnce() {
         Broker broker = mock(Broker.class);
-        ListenerService listener = new ListenerService(broker, new OrderValidator(), rabbitMqProperties());
+        ListenerService listener = listener(broker);
         Order order = validOrder();
 
         listener.listen(order);
@@ -29,7 +30,7 @@ class ListenerServiceTest {
     @Test
     void rejectsAZeroQuantityOrderWithoutSubmittingItToTheBroker() {
         Broker broker = mock(Broker.class);
-        ListenerService listener = new ListenerService(broker, new OrderValidator(), rabbitMqProperties());
+        ListenerService listener = listener(broker);
         Order order = validOrder();
         order.setQuantity(0);
 
@@ -44,6 +45,40 @@ class ListenerServiceTest {
         verifyNoInteractions(broker);
         assertTrue(appender.list.stream().map(ILoggingEvent::getFormattedMessage)
                 .anyMatch(message -> message.contains("quantity must be greater than zero")));
+    }
+
+    @Test
+    void opensAndClosesAccountScopedTradeUpdateStreamsFromConnectionEvents() {
+        TradeUpdateConnectionRegistry registry = mock(TradeUpdateConnectionRegistry.class);
+        ListenerService listener = new ListenerService(mock(Broker.class), new OrderValidator(), rabbitMqProperties(), registry);
+        java.util.UUID connectionId = java.util.UUID.randomUUID();
+
+        ConnectionEvent open = new ConnectionEvent();
+        open.setType("open");
+        open.setConnectionId(connectionId);
+        ConnectionEvent close = new ConnectionEvent();
+        close.setType("close");
+        close.setConnectionId(connectionId);
+
+        listener.listenConnectionEvent(open);
+        listener.listenConnectionEvent(close);
+
+        verify(registry).openConnection(connectionId);
+        verify(registry).closeConnection(connectionId);
+    }
+
+    @Test
+    void ignoresMalformedOrUnsupportedConnectionEvents() {
+        TradeUpdateConnectionRegistry registry = mock(TradeUpdateConnectionRegistry.class);
+        ListenerService listener = new ListenerService(mock(Broker.class), new OrderValidator(), rabbitMqProperties(), registry);
+        ConnectionEvent unsupported = new ConnectionEvent();
+        unsupported.setType("restart");
+        unsupported.setConnectionId(java.util.UUID.randomUUID());
+
+        listener.listenConnectionEvent(null);
+        listener.listenConnectionEvent(unsupported);
+
+        verifyNoInteractions(registry);
     }
 
     private static Order validOrder() {
@@ -61,7 +96,16 @@ class ListenerServiceTest {
     private static RabbitMqProperties rabbitMqProperties() {
         RabbitMqProperties properties = new RabbitMqProperties();
         properties.setOrdersApprovedQueue("orders.approved");
+        properties.setConnectionEventsQueue("connection.events");
         return properties;
+    }
+
+    private static ListenerService listener(Broker broker) {
+        return new ListenerService(
+                broker,
+                new OrderValidator(),
+                rabbitMqProperties(),
+                mock(TradeUpdateConnectionRegistry.class));
     }
 
     private static ListAppender<ILoggingEvent> attachAppender() {

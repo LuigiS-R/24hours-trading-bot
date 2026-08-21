@@ -39,8 +39,6 @@ class ApplicationConfigurationValidatorTest {
 
     private static AlpacaProperties validAlpacaProperties() {
         AlpacaProperties properties = new AlpacaProperties();
-        properties.setKey("key");
-        properties.setSecret("secret");
         properties.setStreamUrl("wss://broker.invalid/stream");
         properties.setSubscriptionMessage("{\"action\":\"listen\",\"data\":{\"streams\":[\"trade_updates\"]}}");
         properties.setOrderEndpoint("https://broker.invalid/v2/orders");
@@ -53,7 +51,9 @@ class ApplicationConfigurationValidatorTest {
         properties.setOrdersApprovedQueue("orders.approved");
         properties.setOrderEventsPortfolioQueue("order-events-portfolio");
         properties.setOrderEventsNotificationQueue("order-events-notification");
+        properties.setOrderEventsPersisterQueue("order-events-persister");
         properties.setOrderEventsExchange("order-events-fanout");
+        properties.setConnectionEventsQueue("connection.events");
         return properties;
     }
 }

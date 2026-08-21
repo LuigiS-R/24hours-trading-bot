@@ -4,7 +4,6 @@ import com.ai_got_this.order_execution_service.dto.OrderEvent;
 import com.ai_got_this.order_execution_service.dto.TradeUpdateResponse;
 import com.ai_got_this.order_execution_service.service.PublisherService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -15,31 +14,41 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-@Component
 @Slf4j
 public class AlpacaWebSocketHandler extends BinaryWebSocketHandler {
+    private final UUID connectionId;
+    private final String oauthToken;
     private final ObjectMapper objectMapper;
     private final PublisherService publisherService;
     private final AlpacaProperties alpacaProperties;
-    private final AlpacaWebSocketReconnectSupervisor reconnectSupervisor;
+    private final Runnable closedCallback;
+    private final AtomicBoolean subscribed = new AtomicBoolean();
 
-    public AlpacaWebSocketHandler(ObjectMapper objectMapper, PublisherService publisherService, AlpacaProperties alpacaProperties, AlpacaWebSocketReconnectSupervisor reconnectSupervisor) {
+    public AlpacaWebSocketHandler(
+            UUID connectionId,
+            String oauthToken,
+            ObjectMapper objectMapper,
+            PublisherService publisherService,
+            AlpacaProperties alpacaProperties,
+            Runnable closedCallback) {
+        this.connectionId = connectionId;
+        this.oauthToken = oauthToken;
         this.publisherService = publisherService;
         this.objectMapper = objectMapper;
         this.alpacaProperties = alpacaProperties;
-        this.reconnectSupervisor = reconnectSupervisor;
+        this.closedCallback = closedCallback;
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
-        String subscriptionMessage = alpacaProperties.getSubscriptionMessage();
-
-        log.info("Connected to Alpaca WebSocket server");
-        reconnectSupervisor.onConnectionEstablished();
-        log.info("Subscribing to trade updates stream...");
-
-        session.sendMessage(new TextMessage(subscriptionMessage));
+        log.info("Connected to Alpaca trade-update WebSocket for connection {}", connectionId);
+        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(Map.of(
+                "action", "authenticate",
+                "data", Map.of("oauth_token", oauthToken)))));
     }
 
     @Override
@@ -53,10 +62,10 @@ public class AlpacaWebSocketHandler extends BinaryWebSocketHandler {
 
             if (rootNode.isArray()) {
                 for (JsonNode alpacaMessage : rootNode) {
-                    processMessage(alpacaMessage);
+                    processMessage(session, alpacaMessage);
                 }
             } else {
-                processMessage(rootNode);
+                processMessage(session, rootNode);
             }
         }
         catch (Exception e) {
@@ -66,15 +75,16 @@ public class AlpacaWebSocketHandler extends BinaryWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        reconnectSupervisor.onConnectionClosed(status);
+        log.warn("Alpaca trade-update WebSocket closed for connection {}: {}", connectionId, status);
+        closedCallback.run();
     }
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
-        reconnectSupervisor.onTransportError(exception);
+        log.error("Alpaca trade-update WebSocket transport error for connection {}: {}", connectionId, exception.getMessage());
     }
 
-    private void processMessage(JsonNode alpacaMessage) {
+    private void processMessage(WebSocketSession session, JsonNode alpacaMessage) {
         try {
             if ("error".equals(alpacaMessage.path("action").asText())) {
                 log.error("Error message received from Alpaca WebSocket: {}",
@@ -103,9 +113,9 @@ public class AlpacaWebSocketHandler extends BinaryWebSocketHandler {
             if ("authorization".equals(stream)) {
                 String status = alpacaMessage.path("data").path("status").asText();
                 if ("authorized".equals(status) || "authenticated".equals(status)) {
-                    log.info("Successfully authenticated with Alpaca WebSocket server");
+                    subscribe(session);
                 } else {
-                    log.error("Failed to authenticate with Alpaca WebSocket server: {}", alpacaMessage.path("data"));
+                    log.error("Failed to authenticate Alpaca trade-update WebSocket for connection {}", connectionId);
                 }
                 return;
             }
@@ -118,7 +128,9 @@ public class AlpacaWebSocketHandler extends BinaryWebSocketHandler {
 
             if ("trade_updates".equals(stream)) {
                 TradeUpdateResponse response = objectMapper.treeToValue(alpacaMessage, TradeUpdateResponse.class);
-                publisherService.publishOrderEvent(new OrderEvent(response));
+                OrderEvent event = new OrderEvent(response);
+                event.setConnectionId(connectionId.toString());
+                publisherService.publishOrderEvent(event);
                 return;
             }
 
@@ -126,6 +138,13 @@ public class AlpacaWebSocketHandler extends BinaryWebSocketHandler {
         }
         catch (Exception e) {
             log.error("Error processing Alpaca message: {}", e.getMessage());
+        }
+    }
+
+    private void subscribe(WebSocketSession session) throws IOException {
+        if (subscribed.compareAndSet(false, true)) {
+            session.sendMessage(new TextMessage(alpacaProperties.getSubscriptionMessage()));
+            log.info("Subscribed to Alpaca trade updates for connection {}", connectionId);
         }
     }
 }

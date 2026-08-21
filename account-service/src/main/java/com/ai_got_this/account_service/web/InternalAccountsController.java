@@ -55,6 +55,8 @@ public class InternalAccountsController {
 
     record ConnectionReferences(List<ConnectionReference> connections) {}
 
+    record ActiveConnectionCredential(UUID connectionId, String accessToken) {}
+
     @GetMapping("/accounts/{id}/risk-snapshot")
     public RiskSnapshot risk(@PathVariable UUID id) {
         AlpacaConnection c = connection(id);
@@ -110,6 +112,21 @@ public class InternalAccountsController {
         return new ConnectionReferences(connections.findAll().stream()
                 .map(connection -> new ConnectionReference(connection.getConnectionId(), connection.getStatus()))
                 .toList());
+    }
+
+    @GetMapping("/order-execution/active-connection-credentials")
+    public List<ActiveConnectionCredential> activeConnectionCredentials() {
+        return connections.findAll().stream()
+                .filter(connection -> connection.getStatus() == AlpacaConnection.ConnectionStatus.CONNECTED)
+                .filter(connection -> connection.getSecretReference() != null)
+                .map(connection -> {
+                    String accessToken = secretStore.read(connection.getSecretReference());
+                    return accessToken == null
+                            ? null
+                            : new ActiveConnectionCredential(connection.getConnectionId(), accessToken);
+                })
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     record BrokerCredential(UUID connectionId, String accessToken) {}
