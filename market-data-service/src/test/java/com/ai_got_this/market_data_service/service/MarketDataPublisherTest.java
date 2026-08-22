@@ -17,7 +17,7 @@ class MarketDataPublisherTest {
     void publishesSuppliedMarketDataToSuppliedExchangeAndRoutingKey() {
         RabbitTemplate template = mock(RabbitTemplate.class);
         MarketTick marketData = new MarketTick(
-                "AAPL", MarketData.builder().ticket("AAPL").close(100.0).build());
+                "AAPL", MarketData.builder().close(100.0).build());
 
         new MarketDataPublisher(template).publishMarketData("market-data-exchange", marketData, "market-data");
 

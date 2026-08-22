@@ -35,6 +35,11 @@ RABBITMQ_NEWS_SENTIMENT_ROUTING_KEY = os.getenv(
 )
 
 REPO_ID = "andreamena/price-prediction-lstm-stock-news"
+# Keep the consumer and its upstream Market Data contract on the same reviewed
+# artifact revision. Override only as part of a coordinated model/contract rollout.
+MODEL_REVISION = os.getenv(
+    "PRICE_PREDICTION_MODEL_REVISION", "ef240954a295fc87de033ca853be215b567d53f8"
+)
 MODEL_FILE = "price_prediction_lstm_v1.keras"
 PRICE_SCALER_FILE = "price_scaler_v1.pkl"
 NEWS_SCALER_FILE = "news_scaler_v1.pkl"
@@ -42,10 +47,10 @@ METADATA_FILE = "metadata.json"
 
 # 2. Load Model & Scalers
 print("Loading model artifacts...")
-model_path = hf_hub_download(repo_id=REPO_ID, filename=MODEL_FILE)
-price_scaler_path = hf_hub_download(repo_id=REPO_ID, filename=PRICE_SCALER_FILE)
-news_scaler_path = hf_hub_download(repo_id=REPO_ID, filename=NEWS_SCALER_FILE)
-metadata_path = hf_hub_download(repo_id=REPO_ID, filename=METADATA_FILE)
+model_path = hf_hub_download(repo_id=REPO_ID, filename=MODEL_FILE, revision=MODEL_REVISION)
+price_scaler_path = hf_hub_download(repo_id=REPO_ID, filename=PRICE_SCALER_FILE, revision=MODEL_REVISION)
+news_scaler_path = hf_hub_download(repo_id=REPO_ID, filename=NEWS_SCALER_FILE, revision=MODEL_REVISION)
+metadata_path = hf_hub_download(repo_id=REPO_ID, filename=METADATA_FILE, revision=MODEL_REVISION)
 
 model = tf.keras.models.load_model(model_path)
 price_scaler = joblib.load(price_scaler_path)

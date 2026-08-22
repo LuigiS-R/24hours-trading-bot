@@ -1,19 +1,15 @@
 package com.ai_got_this.market_data_service.service;
 
-import com.ai_got_this.market_data_service.dto.MarketData;
-import com.ai_got_this.market_data_service.dto.MarketTick;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.stereotype.Service;
 
-@Service
-public class MarketDataPublisher {
-    private final RabbitTemplate rabbitTemplate;
+/**
+ * @deprecated Use {@link MarketDataPublisherService}. Kept as a source-compatible
+ * adapter for callers that still construct the former publisher type directly.
+ */
+@Deprecated(forRemoval = false)
+public class MarketDataPublisher extends MarketDataPublisherService {
 
     public MarketDataPublisher(RabbitTemplate rabbitTemplate) {
-        this.rabbitTemplate = rabbitTemplate;
-    }
-
-    public void publishMarketData(String exchange, MarketTick marketTick, String routingKey) {
-        rabbitTemplate.convertAndSend(exchange, routingKey, marketTick);
+        super(rabbitTemplate);
     }
 }

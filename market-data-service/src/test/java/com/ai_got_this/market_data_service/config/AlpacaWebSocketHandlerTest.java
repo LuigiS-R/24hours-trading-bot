@@ -1,8 +1,7 @@
 package com.ai_got_this.market_data_service.config;
 
-import com.ai_got_this.market_data_service.dto.MarketData;
-import com.ai_got_this.market_data_service.dto.MarketTick;
-import com.ai_got_this.market_data_service.service.MarketDataPublisher;
+import com.ai_got_this.market_data_service.dto.AlpacaBarMessage;
+import com.ai_got_this.market_data_service.service.MarketDataComputationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,24 +17,23 @@ import java.io.IOException;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 class AlpacaWebSocketHandlerTest {
-    private MarketDataPublisher publisher;
+    private MarketDataComputationService computationService;
     private AlpacaWebSocketReconnectSupervisor reconnectSupervisor;
     private AlpacaWebSocketHandler handler;
 
     @BeforeEach
     void setUp() {
-        publisher = mock(MarketDataPublisher.class);
+        computationService = mock(MarketDataComputationService.class);
         reconnectSupervisor = mock(AlpacaWebSocketReconnectSupervisor.class);
         AlpacaProperties properties = new AlpacaProperties();
         properties.setSubscriptionMessage("{\"action\":\"subscribe\",\"bars\":[\"AAPL\"]}");
-        handler = new AlpacaWebSocketHandler(new ObjectMapper(), publisher, properties, reconnectSupervisor);
+        handler = new AlpacaWebSocketHandler(new ObjectMapper(), computationService, properties, reconnectSupervisor);
     }
 
     @Test
@@ -72,69 +70,48 @@ class AlpacaWebSocketHandlerTest {
     }
 
     @Test
-    void validBarIsNormalizedAndPublishedOnceToConfiguredBrokerRoute() {
+    void validBarIsForwardedToTheComputationService() {
         deliver("[{\"T\":\"b\",\"S\":\"AAPL\",\"o\":100.25,\"h\":105.5,\"l\":99.75,\"c\":104.0,\"v\":123456,\"n\":17,\"t\":\"2026-08-17T00:00:00Z\"}]");
 
-        ArgumentCaptor<MarketTick> marketData = ArgumentCaptor.forClass(MarketTick.class);
-        verify(publisher).publishMarketData(eq("market-data-exchange"), marketData.capture(), eq("market-data"));
-        assertEquals(new MarketTick("AAPL", MarketData.builder().ticket("AAPL").open(100.25).high(105.5).low(99.75)
-                .close(104.0).volume(123456L).build()), marketData.getValue());
+        ArgumentCaptor<AlpacaBarMessage> bar = ArgumentCaptor.forClass(AlpacaBarMessage.class);
+        verify(computationService).processBar(bar.capture());
+        assertEquals("AAPL", bar.getValue().getSymbol());
+        assertEquals(104.0, bar.getValue().getClose());
+        assertEquals(123456L, bar.getValue().getVolume());
     }
 
     @Test
-    void unknownAndProviderErrorMessagesAreNeverPublished() {
+    void unknownAndProviderErrorMessagesAreNeverForwardedForComputation() {
         deliver("[{\"T\":\"error\",\"code\":401,\"msg\":\"rejected\"}]");
         deliver("[{\"T\":\"success\",\"msg\":\"authenticated\"}]");
         deliver("[{\"T\":\"subscription\",\"bars\":[\"AAPL\"],\"quotes\":[\"AAPL\"]}]");
 
-        verifyNoInteractions(publisher);
+        verifyNoInteractions(computationService);
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"", "   ", "not-json", "{}", "[]", "[null]", "{\"T\":\"b\"}"})
-    void malformedOrUnexpectedPayloadsAreContainedAndNeverPublished(String payload) {
+    void malformedOrUnexpectedPayloadsAreContainedAndNeverForwarded(String payload) {
         assertDoesNotThrow(() -> handler.handleMessage(mock(WebSocketSession.class), new TextMessage(payload)));
 
-        verifyNoInteractions(publisher);
+        verifyNoInteractions(computationService);
     }
 
     @Test
-    void publisherFailureIsContainedSoOneBadEventDoesNotEscapeWebSocketCallback() {
-        doThrow(new IllegalStateException("broker unavailable")).when(publisher)
-                .publishMarketData(eq("market-data-exchange"), any(MarketTick.class), eq("market-data"));
+    void computationFailureIsContainedSoOneBadEventDoesNotEscapeWebSocketCallback() {
+        doThrow(new IllegalStateException("computation failed")).when(computationService).processBar(any(AlpacaBarMessage.class));
 
         deliver("[{\"T\":\"b\",\"S\":\"AAPL\",\"o\":1,\"h\":2,\"l\":1,\"c\":2,\"v\":1}]");
-        verify(publisher).publishMarketData(eq("market-data-exchange"), any(MarketTick.class), eq("market-data"));
+        verify(computationService).processBar(any(AlpacaBarMessage.class));
     }
 
     @Test
-    void failurePublishingOneBarDoesNotPreventLaterBarsInTheSameFrame() {
-        doThrow(new IllegalStateException("broker unavailable")).when(publisher)
-                .publishMarketData(eq("market-data-exchange"), org.mockito.ArgumentMatchers.argThat(data -> "AAPL".equals(data.ticker())), eq("market-data"));
-
+    void everyBarInProviderBatchIsForwardedInOrder() {
         deliver("[{\"T\":\"b\",\"S\":\"AAPL\",\"o\":1,\"h\":2,\"l\":1,\"c\":2,\"v\":1},{\"T\":\"b\",\"S\":\"MSFT\",\"o\":3,\"h\":4,\"l\":3,\"c\":4,\"v\":2}]");
 
-        verify(publisher, org.mockito.Mockito.times(2)).publishMarketData(eq("market-data-exchange"), any(MarketTick.class), eq("market-data"));
-    }
-
-    @Test
-    void everyBarInProviderBatchIsProcessedInOrder() {
-        deliver("[{\"T\":\"b\",\"S\":\"AAPL\",\"o\":1,\"h\":2,\"l\":1,\"c\":2,\"v\":1},{\"T\":\"b\",\"S\":\"MSFT\",\"o\":3,\"h\":4,\"l\":3,\"c\":4,\"v\":2}]");
-
-        ArgumentCaptor<MarketTick> marketData = ArgumentCaptor.forClass(MarketTick.class);
-        verify(publisher, org.mockito.Mockito.times(2)).publishMarketData(eq("market-data-exchange"), marketData.capture(), eq("market-data"));
-        assertEquals(java.util.List.of("AAPL", "MSFT"), marketData.getAllValues().stream().map(MarketTick::ticker).toList());
-    }
-
-    @Test
-    void invalidBarValuesAreForwardedWithoutValidationByCurrentImplementation() {
-        deliver("[{\"T\":\"b\",\"S\":\"  aapl  \",\"o\":-1,\"h\":0,\"l\":10,\"c\":-2,\"v\":-1}]");
-
-        ArgumentCaptor<MarketTick> marketData = ArgumentCaptor.forClass(MarketTick.class);
-        verify(publisher).publishMarketData(eq("market-data-exchange"), marketData.capture(), eq("market-data"));
-        assertEquals("  aapl  ", marketData.getValue().ticker());
-        assertEquals(-1.0, marketData.getValue().bar().getOpen());
-        assertEquals(-1L, marketData.getValue().bar().getVolume());
+        ArgumentCaptor<AlpacaBarMessage> bars = ArgumentCaptor.forClass(AlpacaBarMessage.class);
+        verify(computationService, org.mockito.Mockito.times(2)).processBar(bars.capture());
+        assertEquals(java.util.List.of("AAPL", "MSFT"), bars.getAllValues().stream().map(AlpacaBarMessage::getSymbol).toList());
     }
 
     private void deliver(String payload) {

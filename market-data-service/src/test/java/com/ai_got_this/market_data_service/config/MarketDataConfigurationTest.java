@@ -1,6 +1,6 @@
 package com.ai_got_this.market_data_service.config;
 
-import com.ai_got_this.market_data_service.service.MarketDataPublisher;
+import com.ai_got_this.market_data_service.service.MarketDataComputationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.Binding;
@@ -88,7 +88,7 @@ class MarketDataConfigurationTest {
     }
 
     private AlpacaWebSocketHandler handlerFor(AlpacaProperties properties) {
-        return new AlpacaWebSocketHandler(new ObjectMapper(), mock(MarketDataPublisher.class), properties,
+        return new AlpacaWebSocketHandler(new ObjectMapper(), mock(MarketDataComputationService.class), properties,
                 new AlpacaWebSocketReconnectSupervisor(unavailableManager(), new ConcurrentTaskScheduler(), Clock.systemUTC()));
     }
 

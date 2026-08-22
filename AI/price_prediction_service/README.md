@@ -50,6 +50,11 @@ All RabbitMQ settings are environment based. The defaults are:
 | `RABBITMQ_NEWS_SENTIMENT_EXCHANGE` | `news-sentiment-exchange` | Direct exchange published by News Impact Service |
 | `RABBITMQ_NEWS_SENTIMENT_ROUTING_KEY` | `news-sentiment` | News-sentiment exchange binding key |
 
+The worker pins the reviewed model artifact revision by default. Set
+`PRICE_PREDICTION_MODEL_REVISION` only when deploying a model revision whose
+`metadata.json` feature contract has been reviewed and implemented by Market
+Data.
+
 ## Event flow
 
 The consumer receives the following messages:

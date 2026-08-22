@@ -6,10 +6,7 @@ import com.ai_got_this.market_data_service.dto.AlpacaMessage;
 import com.ai_got_this.market_data_service.dto.AlpacaSubscriptionMessage;
 import com.ai_got_this.market_data_service.dto.AlpacaSuccessMessage;
 import com.ai_got_this.market_data_service.dto.AlpacaUnknownMessage;
-import com.ai_got_this.market_data_service.dto.MarketData;
-import com.ai_got_this.market_data_service.dto.MarketTick;
-import com.ai_got_this.market_data_service.exception.ErrorMarketDataMessageException;
-import com.ai_got_this.market_data_service.service.MarketDataPublisher;
+import com.ai_got_this.market_data_service.service.MarketDataComputationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -24,18 +21,18 @@ import java.io.IOException;
 @Slf4j
 public class AlpacaWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
-    private final MarketDataPublisher marketDataPublisher;
+    private final MarketDataComputationService marketDataComputationService;
     private final AlpacaProperties alpacaProperties;
     private final AlpacaWebSocketReconnectSupervisor reconnectSupervisor;
 
     public AlpacaWebSocketHandler(
             ObjectMapper objectMapper,
-            MarketDataPublisher marketDataPublisher,
+            MarketDataComputationService marketDataComputationService,
             AlpacaProperties alpacaProperties,
             AlpacaWebSocketReconnectSupervisor reconnectSupervisor
     ) {
         this.objectMapper = objectMapper;
-        this.marketDataPublisher = marketDataPublisher;
+        this.marketDataComputationService = marketDataComputationService;
         this.alpacaProperties = alpacaProperties;
         this.reconnectSupervisor = reconnectSupervisor;
     }
@@ -96,19 +93,7 @@ public class AlpacaWebSocketHandler extends TextWebSocketHandler {
             }
 
             if (alpacaMessage instanceof AlpacaBarMessage barMessage) {
-                MarketData marketData = MarketData.builder()
-                        .ticket(barMessage.getSymbol())
-                        .open(barMessage.getOpen())
-                        .high(barMessage.getHigh())
-                        .low(barMessage.getLow())
-                        .close(barMessage.getClose())
-                        .volume(barMessage.getVolume())
-                        .build();
-
-                marketDataPublisher.publishMarketData(
-                        "market-data-exchange",
-                        new MarketTick(barMessage.getSymbol(), marketData),
-                        "market-data");
+                marketDataComputationService.processBar(barMessage);
             }
 
             if (alpacaMessage instanceof AlpacaUnknownMessage unknownMessage) {
