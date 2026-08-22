@@ -1,7 +1,8 @@
 package com.ai_got_this.account_service.client;
 
-import com.ai_got_this.account_service.config.OrderExecutionServiceProperties;
+import com.ai_got_this.account_service.config.OrderExecutionPersisterProperties;
 import com.ai_got_this.account_service.service.ApiException;
+import com.ai_got_this.account_service.service.KeycloakService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -11,20 +12,22 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
 @Component
-public class OrderExecutionOrdersClient {
+public class OrderExecutionPersisterOrdersClient {
     private final WebClient webClient;
-    private final OrderExecutionServiceProperties properties;
+    private final KeycloakService keycloakService;
 
-    public OrderExecutionOrdersClient(OrderExecutionServiceProperties properties) {
-        this.properties = properties;
+    public OrderExecutionPersisterOrdersClient(
+            OrderExecutionPersisterProperties properties,
+            KeycloakService keycloakService) {
         this.webClient = WebClient.builder().baseUrl(properties.baseUrl()).build();
+        this.keycloakService = keycloakService;
     }
 
     public List<OrderProjectionResponse> latestOrders(UUID connectionId) {
         try {
             List<OrderProjectionResponse> orders = webClient.get()
                     .uri("/internal/v1/accounts/{connectionId}/orders", connectionId)
-                    .headers(headers -> headers.setBearerAuth(properties.serviceToken()))
+                    .headers(headers -> headers.setBearerAuth(keycloakService.accessToken()))
                     .retrieve()
                     .bodyToFlux(OrderProjectionResponse.class)
                     .collectList()
@@ -33,7 +36,7 @@ public class OrderExecutionOrdersClient {
         } catch (Exception exception) {
             throw new ApiException(
                     HttpStatus.SERVICE_UNAVAILABLE,
-                    "ORDER_EXECUTION_UNAVAILABLE",
+                    "ORDER_PERSISTER_UNAVAILABLE",
                     "Order data is temporarily unavailable.");
         }
     }

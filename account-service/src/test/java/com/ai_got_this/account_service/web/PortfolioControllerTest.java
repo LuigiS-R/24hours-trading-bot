@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.ai_got_this.account_service.client.OrderExecutionOrdersClient;
+import com.ai_got_this.account_service.client.OrderExecutionPersisterOrdersClient;
 import com.ai_got_this.account_service.domain.AlpacaConnection;
 import com.ai_got_this.account_service.domain.PositionProjection;
 import com.ai_got_this.account_service.domain.TradingAccountProjection;
@@ -42,7 +42,7 @@ class PortfolioControllerTest {
     private PositionProjectionRepository positionProjectionRepository;
 
     @Mock
-    private OrderExecutionOrdersClient orderExecutionOrdersClient;
+    private OrderExecutionPersisterOrdersClient orderExecutionPersisterOrdersClient;
 
     @Test
     void dashboardAggregatesOwnedConnectionProjectionsAndUsesOldestTimestamp() {
@@ -121,34 +121,34 @@ class PortfolioControllerTest {
     }
 
     @Test
-    void ordersRequiresOwnershipBeforeProxyingToOrderExecution() {
+    void ordersRequiresOwnershipBeforeProxyingToOrderPersister() {
         AlpacaConnection connection = connection();
-        OrderExecutionOrdersClient.OrderProjectionResponse order = new OrderExecutionOrdersClient.OrderProjectionResponse(
+        OrderExecutionPersisterOrdersClient.OrderProjectionResponse order = new OrderExecutionPersisterOrdersClient.OrderProjectionResponse(
                 UUID.randomUUID(), connection.getConnectionId(), UUID.randomUUID(), "client-1", "AAPL", "buy",
                 BigDecimal.ONE, BigDecimal.ZERO, null, "market", "day", "new", null,
                 Instant.now(), Instant.now(), null, null);
         when(currentUserService.requireOwnedConnection(connection.getConnectionId())).thenReturn(connection);
-        when(orderExecutionOrdersClient.latestOrders(connection.getConnectionId())).thenReturn(List.of(order));
+        when(orderExecutionPersisterOrdersClient.latestOrders(connection.getConnectionId())).thenReturn(List.of(order));
 
-        List<OrderExecutionOrdersClient.OrderProjectionResponse> result = controller().getOrders(connection.getConnectionId());
+        List<OrderExecutionPersisterOrdersClient.OrderProjectionResponse> result = controller().getOrders(connection.getConnectionId());
 
         assertThat(result).containsExactly(order);
         verify(currentUserService).requireOwnedConnection(connection.getConnectionId());
-        verify(orderExecutionOrdersClient).latestOrders(connection.getConnectionId());
+        verify(orderExecutionPersisterOrdersClient).latestOrders(connection.getConnectionId());
     }
 
     @Test
     void ordersPropagatesTheProxyUnavailableError() {
         AlpacaConnection connection = connection();
         when(currentUserService.requireOwnedConnection(connection.getConnectionId())).thenReturn(connection);
-        when(orderExecutionOrdersClient.latestOrders(connection.getConnectionId())).thenThrow(new ApiException(
+        when(orderExecutionPersisterOrdersClient.latestOrders(connection.getConnectionId())).thenThrow(new ApiException(
                 HttpStatus.SERVICE_UNAVAILABLE,
-                "ORDER_EXECUTION_UNAVAILABLE",
+                "ORDER_PERSISTER_UNAVAILABLE",
                 "Order data is temporarily unavailable."));
 
         assertThatThrownBy(() -> controller().getOrders(connection.getConnectionId()))
                 .isInstanceOf(ApiException.class)
-                .satisfies(error -> assertThat(((ApiException) error).code).isEqualTo("ORDER_EXECUTION_UNAVAILABLE"));
+                .satisfies(error -> assertThat(((ApiException) error).code).isEqualTo("ORDER_PERSISTER_UNAVAILABLE"));
     }
 
     private PortfolioController controller() {
@@ -157,7 +157,7 @@ class PortfolioControllerTest {
                 alpacaConnectionRepository,
                 tradingAccountProjectionRepository,
                 positionProjectionRepository,
-                orderExecutionOrdersClient);
+                orderExecutionPersisterOrdersClient);
     }
 
     private AlpacaConnection connection() {

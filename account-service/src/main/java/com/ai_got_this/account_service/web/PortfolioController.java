@@ -1,6 +1,6 @@
 package com.ai_got_this.account_service.web;
 
-import com.ai_got_this.account_service.client.OrderExecutionOrdersClient;
+import com.ai_got_this.account_service.client.OrderExecutionPersisterOrdersClient;
 import com.ai_got_this.account_service.domain.AlpacaConnection;
 import com.ai_got_this.account_service.domain.PositionProjection;
 import com.ai_got_this.account_service.domain.TradingAccountProjection;
@@ -29,19 +29,19 @@ public class PortfolioController {
     private final AlpacaConnectionRepository alpacaConnectionRepository;
     private final TradingAccountProjectionRepository tradingAccountProjectionRepository;
     private final PositionProjectionRepository positionProjectionRepository;
-    private final OrderExecutionOrdersClient orderExecutionOrdersClient;
+    private final OrderExecutionPersisterOrdersClient orderExecutionPersisterOrdersClient;
 
     public PortfolioController(
             CurrentUserService currentUserService,
             AlpacaConnectionRepository alpacaConnectionRepository,
             TradingAccountProjectionRepository tradingAccountProjectionRepository,
             PositionProjectionRepository positionProjectionRepository,
-            OrderExecutionOrdersClient orderExecutionOrdersClient) {
+            OrderExecutionPersisterOrdersClient orderExecutionPersisterOrdersClient) {
         this.currentUserService = currentUserService;
         this.alpacaConnectionRepository = alpacaConnectionRepository;
         this.tradingAccountProjectionRepository = tradingAccountProjectionRepository;
         this.positionProjectionRepository = positionProjectionRepository;
-        this.orderExecutionOrdersClient = orderExecutionOrdersClient;
+        this.orderExecutionPersisterOrdersClient = orderExecutionPersisterOrdersClient;
     }
 
     @GetMapping("/dashboard")
@@ -94,9 +94,9 @@ public class PortfolioController {
     }
 
     @GetMapping("/alpaca/connections/{id}/orders")
-    public List<OrderExecutionOrdersClient.OrderProjectionResponse> getOrders(@PathVariable UUID id) {
+    public List<OrderExecutionPersisterOrdersClient.OrderProjectionResponse> getOrders(@PathVariable UUID id) {
         currentUserService.requireOwnedConnection(id);
-        return orderExecutionOrdersClient.latestOrders(id);
+        return orderExecutionPersisterOrdersClient.latestOrders(id);
     }
 
     private BigDecimal total(
