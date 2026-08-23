@@ -228,3 +228,179 @@ button.quiet:hover {
   font-size: 1.2rem;
   font-weight: 600;
 }
+
+/* Profile form */
+.form {
+  display: grid;
+  gap: 20px;
+  max-width: 640px;
+}
+
+.form label {
+  display: grid;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.form input {
+  width: 100%;
+  background-color: var(--bg-base);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px 12px;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.form input:focus {
+  border-color: var(--primary);
+}
+
+.form input[readonly] {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.form > div {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* Watchlist detail */
+.ticker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ticker-row:last-child {
+  border-bottom: none;
+}
+
+.ticker-row strong {
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+
+.ticker-row .actions {
+  align-items: center;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+button.danger {
+  background-color: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+button.danger:hover {
+  background-color: rgba(239, 68, 68, 0.25);
+}
+
+/* Space the ticker form from the entries */
+.panel > .actions,
+.panel > form.actions {
+  margin-bottom: 12px;
+}
+
+.panel form input {
+  background-color: var(--bg-base);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.panel form input:focus {
+  border-color: var(--primary);
+}
+
+/* Watchlists table */
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.data-table th,
+.data-table td {
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table th {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.data-table td {
+  color: var(--text-main);
+  font-size: 0.95rem;
+}
+
+.data-table tbody tr {
+  transition: background-color 0.15s;
+}
+
+.data-table tbody tr:hover {
+  background-color: var(--bg-card-hover);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table td:first-child {
+  font-weight: 600;
+}
+
+.data-table td:last-child {
+  text-align: right;
+}
+
+.data-table a {
+  color: #a5b4fc;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.data-table a:hover {
+  color: #c7d2fe;
+  text-decoration: underline;
+}
+
+/* Keep badges vertically aligned inside tables */
+.data-table .badge {
+  margin-bottom: 0;
+}

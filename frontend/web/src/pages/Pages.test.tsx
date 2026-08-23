@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import {
   LoginPage,
   DashboardPage,
   ConnectionsPage,
+  WatchlistDetailPage,
+  ProfilePage,
   OAuthFailurePage,
 } from './Pages';
 import { accounts } from '../api/accountsClient';
@@ -40,7 +42,14 @@ vi.mock('../api/accountsClient', () => ({
     authorize: vi.fn(),
     reconcile: vi.fn(),
     watchlists: vi.fn(),
+    watchlist: vi.fn(),
     createWatchlist: vi.fn(),
+    disconnect: vi.fn(),
+    addTicker: vi.fn(),
+    toggleTicker: vi.fn(),
+    removeTicker: vi.fn(),
+    deleteWatchlist: vi.fn(),
+    profile: vi.fn(),
   },
   errorText: vi.fn((err: any) => err.message || 'Error occurred'),
 }));
@@ -424,5 +433,387 @@ it('shows a safe error when watchlist creation fails', async () => {
     expect(
       screen.getByText(/Alpaca is temporarily unavailable/i)
     ).toBeInTheDocument();
+  });
+});
+
+it('renders watchlists for the selected connected paper account', async () => {
+  mockKeycloak.authenticated = true;
+
+  const connection = {
+    id: '11111111-1111-4111-8111-111111111111',
+    status: 'CONNECTED',
+    accountId: 'PA39102941',
+    environment: 'PAPER',
+  };
+
+  (accounts.connections as any).mockResolvedValueOnce([connection]);
+
+  (accounts.watchlists as any).mockResolvedValueOnce([
+    {
+      id: '22222222-2222-4222-8222-222222222222',
+      name: 'Tech Momentum',
+      entryCount: 3,
+      activeEntryCount: 2,
+      status: 'SYNCED',
+    },
+    {
+      id: '33333333-3333-4333-8333-333333333333',
+      name: 'Crypto Paper',
+      entryCount: 2,
+      activeEntryCount: 1,
+      status: 'SYNCED',
+    },
+  ]);
+
+  render(
+    <MemoryRouter>
+      <ConnectionsPage />
+    </MemoryRouter>
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText('PA39102941')).toBeInTheDocument();
+
+    expect(screen.getByText('Tech Momentum')).toBeInTheDocument();
+    expect(screen.getByText('Crypto Paper')).toBeInTheDocument();
+
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getAllByText('2')).toHaveLength(2);
+    expect(screen.getByText('1')).toBeInTheDocument();
+  });
+});
+
+it('confirms before disconnecting a paper account', async () => {
+  // ...your test #18...
+});
+
+
+// TEST #19 — ADD IT HERE
+it('renders an existing watchlist with its ticker entries', async () => {
+  mockKeycloak.authenticated = true;
+
+  (accounts.watchlist as any).mockResolvedValueOnce({
+    id: '22222222-2222-4222-8222-222222222222',
+    name: 'Tech Momentum',
+    status: 'SYNCED',
+    entries: [
+      {
+        ticker: 'AAPL',
+        symbol: 'AAPL',
+        active: true,
+      },
+      {
+        ticker: 'MSFT',
+        symbol: 'MSFT',
+        active: false,
+      },
+      {
+        ticker: 'NVDA',
+        symbol: 'NVDA',
+        active: true,
+      },
+    ],
+  });
+
+  render(
+    <MemoryRouter
+      initialEntries={[
+        '/watchlists/22222222-2222-4222-8222-222222222222',
+      ]}
+    >
+      <Routes>
+        <Route
+          path="/watchlists/:watchlistId"
+          element={<WatchlistDetailPage />}
+        />
+      </Routes>
+    </MemoryRouter>
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText('Tech Momentum')).toBeInTheDocument();
+    expect(screen.getByText('AAPL')).toBeInTheDocument();
+    expect(screen.getByText('MSFT')).toBeInTheDocument();
+    expect(screen.getByText('NVDA')).toBeInTheDocument();
+  });
+});
+
+it('adds a normalized ticker to an existing watchlist', async () => {
+  mockKeycloak.authenticated = true;
+
+  const watchlistId = '22222222-2222-4222-8222-222222222222';
+
+  (accounts.watchlist as any)
+    .mockResolvedValueOnce({
+      id: watchlistId,
+      name: 'Tech Momentum',
+      status: 'SYNCED',
+      entries: [
+        {
+          ticker: 'AAPL',
+          symbol: 'AAPL',
+          active: true,
+        },
+      ],
+    })
+    .mockResolvedValueOnce({
+      id: watchlistId,
+      name: 'Tech Momentum',
+      status: 'SYNCED',
+      entries: [
+        {
+          ticker: 'AAPL',
+          symbol: 'AAPL',
+          active: true,
+        },
+        {
+          ticker: 'NVDA',
+          symbol: 'NVDA',
+          active: true,
+        },
+      ],
+    });
+
+  (accounts.addTicker as any).mockResolvedValueOnce(null);
+
+  render(
+    <MemoryRouter initialEntries={[`/watchlists/${watchlistId}`]}>
+      <Routes>
+        <Route
+          path="/watchlists/:watchlistId"
+          element={<WatchlistDetailPage />}
+        />
+      </Routes>
+    </MemoryRouter>
+  );
+
+  const tickerInput = await screen.findByPlaceholderText(/ticker/i);
+
+  fireEvent.change(tickerInput, {
+    target: { value: ' nvda ' },
+  });
+
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: /add ticker/i,
+    })
+  );
+
+  await waitFor(() => {
+    expect(accounts.addTicker).toHaveBeenCalledWith(
+      watchlistId,
+      'NVDA'
+    );
+  });
+});
+
+it('toggles monitoring for a watchlist ticker', async () => {
+  mockKeycloak.authenticated = true;
+
+  const watchlistId = '22222222-2222-4222-8222-222222222222';
+
+  (accounts.watchlist as any)
+    .mockResolvedValueOnce({
+      id: watchlistId,
+      name: 'Tech Momentum',
+      status: 'SYNCED',
+      entries: [
+        {
+          ticker: 'AAPL',
+          symbol: 'AAPL',
+          active: true,
+        },
+      ],
+    })
+    .mockResolvedValueOnce({
+      id: watchlistId,
+      name: 'Tech Momentum',
+      status: 'SYNCED',
+      entries: [
+        {
+          ticker: 'AAPL',
+          symbol: 'AAPL',
+          active: false,
+        },
+      ],
+    });
+
+  (accounts.toggleTicker as any).mockResolvedValueOnce(null);
+
+  render(
+    <MemoryRouter initialEntries={[`/watchlists/${watchlistId}`]}>
+      <Routes>
+        <Route
+          path="/watchlists/:watchlistId"
+          element={<WatchlistDetailPage />}
+        />
+      </Routes>
+    </MemoryRouter>
+  );
+
+  const toggleCheckbox = await screen.findByRole('checkbox');
+
+  fireEvent.click(toggleCheckbox);
+
+  await waitFor(() => {
+    expect(accounts.toggleTicker).toHaveBeenCalledWith(
+      watchlistId,
+      'AAPL',
+      false
+    );
+  });
+});
+
+it('confirms before removing a ticker from a watchlist', async () => {
+  mockKeycloak.authenticated = true;
+
+  const watchlistId = '22222222-2222-4222-8222-222222222222';
+
+  (accounts.watchlist as any)
+    .mockResolvedValueOnce({
+      id: watchlistId,
+      name: 'Tech Momentum',
+      status: 'SYNCED',
+      entries: [
+        {
+          ticker: 'AAPL',
+          symbol: 'AAPL',
+          active: true,
+        },
+      ],
+    })
+    .mockResolvedValueOnce({
+      id: watchlistId,
+      name: 'Tech Momentum',
+      status: 'SYNCED',
+      entries: [],
+    });
+
+  (accounts.removeTicker as any).mockResolvedValueOnce(null);
+
+  render(
+    <MemoryRouter initialEntries={[`/watchlists/${watchlistId}`]}>
+      <Routes>
+        <Route
+          path="/watchlists/:watchlistId"
+          element={<WatchlistDetailPage />}
+        />
+      </Routes>
+    </MemoryRouter>
+  );
+
+  const removeButton = await screen.findByRole('button', {
+    name: /^remove$/i,
+  });
+
+  fireEvent.click(removeButton);
+
+  expect(
+    screen.getByText(/Remove AAPL\?/i)
+  ).toBeInTheDocument();
+
+  expect(
+    screen.getByText(/This changes the Alpaca broker watchlist/i)
+  ).toBeInTheDocument();
+
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: /confirm/i,
+    })
+  );
+
+  await waitFor(() => {
+    expect(accounts.removeTicker).toHaveBeenCalledWith(
+      watchlistId,
+      'AAPL'
+    );
+  });
+});
+
+it('confirms before deleting a watchlist', async () => {
+  mockKeycloak.authenticated = true;
+
+  const watchlistId = '22222222-2222-4222-8222-222222222222';
+
+  (accounts.watchlist as any).mockResolvedValueOnce({
+    id: watchlistId,
+    name: 'Tech Momentum',
+    status: 'SYNCED',
+    entries: [
+      {
+        ticker: 'AAPL',
+        symbol: 'AAPL',
+        active: true,
+      },
+    ],
+  });
+
+  (accounts.deleteWatchlist as any).mockResolvedValueOnce(null);
+
+  render(
+    <MemoryRouter initialEntries={[`/watchlists/${watchlistId}`]}>
+      <Routes>
+        <Route
+          path="/watchlists/:watchlistId"
+          element={<WatchlistDetailPage />}
+        />
+      </Routes>
+    </MemoryRouter>
+  );
+
+  const deleteButton = await screen.findByRole('button', {
+    name: /delete watchlist/i,
+  });
+
+  fireEvent.click(deleteButton);
+
+  expect(
+    screen.getByRole('dialog')
+  ).toBeInTheDocument();
+
+  expect(
+    screen.getByText(/Delete watchlist\?/i)
+  ).toBeInTheDocument();
+
+  expect(
+    screen.getByText(/This changes the Alpaca broker watchlist/i)
+  ).toBeInTheDocument();
+
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: /confirm/i,
+    })
+  );
+
+  await waitFor(() => {
+    expect(accounts.deleteWatchlist).toHaveBeenCalledWith(
+      watchlistId
+    );
+  });
+});
+
+it('renders the authenticated user profile', async () => {
+  mockKeycloak.authenticated = true;
+
+  (accounts.profile as any).mockResolvedValueOnce({
+    id: 'user-123',
+    email: 'trader@example.com',
+    displayName: 'TraderBotUser',
+  });
+
+  render(
+    <MemoryRouter>
+      <ProfilePage />
+    </MemoryRouter>
+  );
+
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText(/Display name/i)
+    ).toHaveValue('TraderBotUser');
+
+    expect(
+      screen.getByLabelText(/Email/i)
+    ).toHaveValue('trader@example.com');
   });
 });
