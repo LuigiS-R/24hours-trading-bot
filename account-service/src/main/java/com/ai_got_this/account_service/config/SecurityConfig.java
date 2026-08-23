@@ -2,8 +2,10 @@ package com.ai_got_this.account_service.config;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
@@ -15,14 +17,21 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 public class SecurityConfig {
+
     @Bean
     SecurityFilterChain security(
             HttpSecurity http,
             Converter<Jwt, JwtAuthenticationToken> keycloakJwtAuthenticationConverter) throws Exception {
-        return http.csrf(AbstractHttpConfigurer::disable)
+
+        return http
+                .csrf(AbstractHttpConfigurer::disable)
+                .cors(cors -> {})
                 .authorizeHttpRequests(
                         authorize ->
                                 authorize
@@ -35,22 +44,44 @@ public class SecurityConfig {
                                         .anyRequest()
                                         .authenticated())
                 .oauth2ResourceServer(
-                        oauth2 -> oauth2.jwt(jwt -> jwt.jwtAuthenticationConverter(keycloakJwtAuthenticationConverter)))
+                        oauth2 -> oauth2.jwt(
+                                jwt -> jwt.jwtAuthenticationConverter(keycloakJwtAuthenticationConverter)))
                 .build();
     }
 
-    /**
-     * Keycloak puts realm roles in {@code realm_access.roles}, whereas Spring's
-     * default converter recognizes only OAuth scopes. Preserve scope authorities
-     * and turn realm roles into Spring's {@code ROLE_*} authorities so the
-     * {@code hasAnyRole(...)} rules above can authorize service accounts.
-     */
+    @Bean
+    CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+        configuration.setAllowedOrigins(List.of("http://localhost:5173"));
+        configuration.setAllowedMethods(List.of(
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "OPTIONS"));
+        configuration.setAllowedHeaders(List.of(
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key"));
+        configuration.setExposedHeaders(List.of("Location"));
+        configuration.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+
+        return source;
+    }
+
     @Bean
     Converter<Jwt, JwtAuthenticationToken> keycloakJwtAuthenticationConverter() {
         JwtGrantedAuthoritiesConverter scopeAuthorities = new JwtGrantedAuthoritiesConverter();
 
         return jwt -> {
-            Set<GrantedAuthority> authorities = new LinkedHashSet<>(scopeAuthorities.convert(jwt));
+            Set<GrantedAuthority> authorities =
+                    new LinkedHashSet<>(scopeAuthorities.convert(jwt));
+
             Map<String, Object> realmAccess = jwt.getClaimAsMap("realm_access");
             Object roles = realmAccess == null ? null : realmAccess.get("roles");
 

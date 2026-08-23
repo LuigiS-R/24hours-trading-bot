@@ -31,7 +31,7 @@ describe('accountsClient Unit & Integration Tests', () => {
     (globalThis.fetch as any).mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => mockProfile,
+      text: async () => JSON.stringify(mockProfile),
     });
 
     const result = await accounts.profile();
@@ -54,7 +54,7 @@ describe('accountsClient Unit & Integration Tests', () => {
     (globalThis.fetch as any).mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => rawConnection,
+      text: async () => JSON.stringify(rawConnection),
     });
 
     const result = await accounts.connection('conn-1');
@@ -70,7 +70,12 @@ describe('accountsClient Unit & Integration Tests', () => {
     (globalThis.fetch as any).mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => ({ id: 'wl-1', name: 'Tech', symbols: ['AAPL'] }),
+      text: async () =>
+        JSON.stringify({
+          id: 'wl-1',
+          name: 'Tech',
+          symbols: ['AAPL'],
+        }),
     });
 
     await accounts.createWatchlist('conn-1', 'Tech', ['AAPL']);
