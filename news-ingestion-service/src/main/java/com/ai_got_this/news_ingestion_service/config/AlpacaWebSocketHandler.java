@@ -2,8 +2,10 @@ package com.ai_got_this.news_ingestion_service.config;
 
 import com.ai_got_this.news_ingestion_service.dto.*;
 import com.ai_got_this.news_ingestion_service.service.NewsPublisher;
+import com.ai_got_this.news_ingestion_service.service.WebSocketReconnectService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
@@ -11,6 +13,8 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Component
 @Slf4j
@@ -18,20 +22,22 @@ public class AlpacaWebSocketHandler extends TextWebSocketHandler{
     private final ObjectMapper objectMapper;
     private final NewsPublisher newsPublisher;
     private final AlpacaProperties alpacaProperties;
-    private final AlpacaWebSocketReconnectSupervisor reconnectSupervisor;
+    private final ExecutorService executorService = Executors.newFixedThreadPool(1);
+    private final WebSocketReconnectService webSocketReconnectService;
+    private final StringBuilder messageBuffer = new StringBuilder();
 
-    public AlpacaWebSocketHandler(ObjectMapper objectMapper, NewsPublisher newsPublisher, AlpacaProperties alpacaProperties, AlpacaWebSocketReconnectSupervisor reconnectSupervisor) {
+    public AlpacaWebSocketHandler(ObjectMapper objectMapper, NewsPublisher newsPublisher, AlpacaProperties alpacaProperties, WebSocketReconnectService webSocketReconnectService) {
         this.objectMapper = objectMapper;
         this.newsPublisher = newsPublisher;
         this.alpacaProperties = alpacaProperties;
-        this.reconnectSupervisor = reconnectSupervisor;
+        this.webSocketReconnectService = webSocketReconnectService;
     }
 
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
         log.info("Connected to Alpaca WebSocket server");
-        reconnectSupervisor.onConnectionEstablished();
+        webSocketReconnectService.onSuccessfulReconnection();
 
         log.info("Subscribing to news stream...");
         String subscriptionMessage = alpacaProperties.getSubscriptionMessage();
@@ -39,25 +45,33 @@ public class AlpacaWebSocketHandler extends TextWebSocketHandler{
     }
 
     @Override
-    public void afterConnectionClosed(WebSocketSession session, org.springframework.web.socket.CloseStatus status) {
-        reconnectSupervisor.onConnectionClosed(status);
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        executorService.submit(() -> {
+            webSocketReconnectService.reconnect(session, status);
+        });
     }
 
     @Override
-    public void handleTransportError(WebSocketSession session, Throwable exception) {
-        reconnectSupervisor.onTransportError(exception);
+    public boolean supportsPartialMessages() {
+        return true;
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message){
-        try{
-            AlpacaMessage[] alpacaMessages = objectMapper.readValue(message.getPayload(), AlpacaMessage[].class);
-            for (AlpacaMessage alpacaMessage : alpacaMessages) {
-                processMessage(alpacaMessage);
+        messageBuffer.append(message.getPayload());
+        if (message.isLast()){
+            String completeMessage = messageBuffer.toString();
+            messageBuffer.setLength(0);
+
+            try{
+                AlpacaMessage[] alpacaMessages = objectMapper.readValue(completeMessage, AlpacaMessage[].class);
+                for (AlpacaMessage alpacaMessage : alpacaMessages) {
+                    processMessage(alpacaMessage);
+                }
             }
-        }
-        catch(Exception e){
-            log.error(e.getMessage());
+            catch(Exception e){
+                log.error(e.getMessage());
+            }
         }
     }
 
