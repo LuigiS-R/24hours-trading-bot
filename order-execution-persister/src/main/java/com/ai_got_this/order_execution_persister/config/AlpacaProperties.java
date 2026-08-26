@@ -13,4 +13,8 @@ import org.springframework.validation.annotation.Validated;
 public class AlpacaProperties {
     @NotBlank
     private String paperTradingBaseUrl;
+    @NotBlank
+    private String key;
+    @NotBlank
+    private String secret;
 }

@@ -9,7 +9,7 @@ import lombok.Data;
 @Data
 @Entity
 public class TradingAccountProjection {
-    @Id private UUID connectionId;
+    @Id private UUID projectionId;
 
     @Column(nullable = false)
     private UUID alpacaAccountId;

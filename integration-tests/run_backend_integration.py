@@ -1,67 +1,176 @@
 #!/usr/bin/env python3
-"""Repeatable local integration runner; stdlib-only so it never contacts external providers."""
-import base64,json,os,subprocess,sys,time,urllib.request,uuid,signal
+"""Controlled backend integration suite.  It never calls a public endpoint."""
+import base64
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+import uuid
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[1]; IT=ROOT/'integration-tests'; LOG=IT/'artifacts'; LOG.mkdir(exist_ok=True)
-run_id='it-'+uuid.uuid4().hex[:12]; failures=[]; passed=[]; procs=[]
-def http(path,method='GET',body=None,headers={}):
- data=None if body is None else (body if isinstance(body,bytes) else json.dumps(body).encode())
- r=urllib.request.Request('http://127.0.0.1:18080'+path,data=data,method=method,headers={'Content-Type':'application/json',**headers})
- with urllib.request.urlopen(r,timeout=5) as x:return x.status,json.loads(x.read() or b'{}')
-def rabbit(path,method='GET',body=None):
- data=None if body is None else json.dumps(body).encode()
- auth=base64.b64encode(b'it_user:it_password_only').decode()
- r=urllib.request.Request('http://127.0.0.1:15673'+path,data=data,method=method,headers={'Content-Type':'application/json','Authorization':'Basic '+auth})
- with urllib.request.urlopen(r,timeout=5) as x:return json.loads(x.read() or b'{}')
-def wait(label,fn,seconds=45):
- end=time.monotonic()+seconds; last=None
- while time.monotonic()<end:
-  try:
-   if fn(): passed.append(label);return True
-  except Exception as e:last=e
-  time.sleep(.25)
- failures.append((label,'Test-environment defect',str(last)));return False
-def assert_that(label,condition,evidence,classification='Critical production defect'):
- (passed if condition else failures).append(label if condition else (label,classification,evidence))
-def post_queue(q,payload): rabbit('/api/exchanges/integration/amq.default/publish','POST',{'properties':{'content_type':'application/json'},'routing_key':q,'payload':json.dumps(payload),'payload_encoding':'string'})
-def get_queue(q): return rabbit('/api/queues/integration/'+q+'/get','POST',{'count':20,'ackmode':'ack_requeue_false','encoding':'auto','truncate':50000})
-def start_jar(name,folder,env):
- f=next((ROOT/folder/'target').glob('*.jar')); out=open(LOG/(name+'.log'),'w'); p=subprocess.Popen(['java','-jar',str(f)],cwd=ROOT/folder,env={**os.environ,**env},stdout=out,stderr=subprocess.STDOUT);procs.append((p,out))
+
+ROOT = Path(__file__).resolve().parents[1]
+IT = ROOT / "integration-tests"
+ARTIFACTS = IT / "artifacts"
+ARTIFACTS.mkdir(exist_ok=True)
+RUN_ID = "it-" + uuid.uuid4().hex[:12]
+PASSED, FAILED, PROCESSES = [], [], []
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, newurl):
+        return None
+
+def request(url, method="GET", body=None, headers=None, no_redirect=False):
+    data = None if body is None else (body if isinstance(body, bytes) else json.dumps(body).encode())
+    req = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/json", **(headers or {})})
+    opener = urllib.request.build_opener(NoRedirect()) if no_redirect else urllib.request.build_opener()
+    try:
+        with opener.open(req, timeout=5) as response:
+            raw = response.read()
+            return response.status, json.loads(raw or b"{}"), dict(response.headers)
+    except urllib.error.HTTPError as error:
+        raw = error.read()
+        try: payload = json.loads(raw or b"{}")
+        except ValueError: payload = {"raw": raw.decode(errors="replace")[:500]}
+        return error.code, payload, dict(error.headers)
+
+def fake(path, method="GET", body=None, headers=None):
+    return request("http://127.0.0.1:18080" + path, method, body, headers)
+
+def rabbit(path, method="GET", body=None):
+    auth = base64.b64encode(b"it_user:it_password_only").decode()
+    status, value, _ = request("http://127.0.0.1:15673" + path, method, body, {"Authorization": "Basic " + auth})
+    if status >= 300: raise RuntimeError("RabbitMQ %s %s returned %s: %s" % (method, path, status, value))
+    return value
+
+def wait(label, predicate, seconds=45):
+    deadline, last = time.monotonic() + seconds, None
+    while time.monotonic() < deadline:
+        try:
+            if predicate():
+                PASSED.append(label); return True
+        except Exception as error:
+            last = error
+        time.sleep(0.25)
+    FAILED.append((label, "Test-environment or integration defect", repr(last)))
+    return False
+
+def check(label, condition, evidence, category="Production defect"):
+    if condition: PASSED.append(label)
+    else: FAILED.append((label, category, str(evidence)[:2000]))
+    return condition
+
+def scenario(label, callback):
+    try: callback()
+    except Exception as error: FAILED.append((label, "Test-suite execution failure", repr(error)))
+
+def queue_publish(queue, payload):
+    return rabbit("/api/exchanges/integration/amq.default/publish", "POST", {
+        "properties": {"content_type": "application/json"}, "routing_key": queue,
+        "payload": json.dumps(payload), "payload_encoding": "string"})
+
+def queue_get(queue, count=50):
+    return rabbit("/api/queues/integration/%s/get" % queue, "POST", {
+        "count": count, "ackmode": "ack_requeue_false", "encoding": "auto", "truncate": 50000})
+
+def log_contains(name, text):
+    path = ARTIFACTS / (name + ".log")
+    return path.exists() and text in path.read_text(errors="replace")
+
+def start(name, folder, environment, command=None):
+    log = open(ARTIFACTS / (name + ".log"), "w")
+    executable = command or ["java", "-jar", str(next((ROOT / folder / "target").glob("*.jar")))]
+    process = subprocess.Popen(executable, cwd=ROOT / folder, env={**os.environ, **environment}, stdout=log, stderr=subprocess.STDOUT)
+    PROCESSES.append((process, log)); return process
+
+def package_all():
+    for service in ["news-ingestion-service", "market-data-service", "account-service", "order-execution-service", "order-execution-persister"]:
+        subprocess.run(["./mvnw", "package", "-q", "-DskipTests"], cwd=ROOT / service, check=True)
+
+def start_services():
+    common = {"SPRING_RABBITMQ_HOST": "127.0.0.1", "SPRING_RABBITMQ_PORT": "5673", "SPRING_RABBITMQ_USERNAME": "it_user", "SPRING_RABBITMQ_PASSWORD": "it_password_only", "SPRING_RABBITMQ_VIRTUAL_HOST": "integration"}
+    alpaca = {"ALPACA_API_KEY": "fake-key", "ALPACA_API_SECRET": "fake-secret", "ALPACA_PAPER_TRADING_BASE_URL": "http://127.0.0.1:18080"}
+    start("account", "account-service", {**common, **alpaca, "DATABASE_URL": "jdbc:postgresql://127.0.0.1:15432/accounts_it", "DATABASE_USERNAME": "accounts_it", "DATABASE_PASSWORD": "accounts_password_only", "ORDER_EXECUTION_PERSISTER_INTERNAL_BASE_URL": "http://127.0.0.1:8085", "SERVER_PORT": "8081"})
+    wait("Account Service starts and migrates", lambda: log_contains("account", "Started AccountServiceApplication"))
+    wait("Configured account reconciles", lambda: request("http://127.0.0.1:8081/api/v1/account/reconcile", "POST")[0] == 200)
+    start("persister", "order-execution-persister", {**common, **alpaca, "DATABASE_URL": "jdbc:postgresql://127.0.0.1:15432/order_execution_it", "DATABASE_USERNAME": "accounts_it", "DATABASE_PASSWORD": "accounts_password_only", "SERVER_PORT": "8085"})
+    wait("Order Persister starts and validates its schema", lambda: log_contains("persister", "Started OrderExecutionPersisterApplication"))
+    start("order", "order-execution-service", {**common, **alpaca, "ALPACA_API_STREAM_URL": "ws://127.0.0.1:18083", "ALPACA_API_ORDER_ENDPOINT": "http://127.0.0.1:18080/v2/orders", "ALPACA_API_SUBSCRIPTION_MESSAGE": "{\"action\":\"listen\",\"data\":{\"streams\":[\"trade_updates\"]}}", "SERVER_PORT": "8084"})
+    start("news", "news-ingestion-service", {**common, "ALPACA_API_KEY": "fake-key", "ALPACA_API_SECRET": "fake-secret", "ALPACA_API_NEWS_STREAM_URL": "ws://127.0.0.1:18081", "ALPACA_API_SUBSCRIPTION_MESSAGE": "{\"action\":\"subscribe\",\"news\":[\"*\"]}", "SERVER_PORT": "8082"})
+    start("market", "market-data-service", {**common, "ALPACA_API_KEY": "fake-key", "ALPACA_API_SECRET": "fake-secret", "ALPACA_API_MARKET_STREAM_URL": "ws://127.0.0.1:18082", "ALPACA_API_SUBSCRIPTION_MESSAGE": "{\"action\":\"subscribe\",\"bars\":[\"*\"]}", "SERVER_PORT": "8083"})
+    strategy_env = {"RABBITMQ_HOST": "127.0.0.1", "RABBITMQ_PORT": "5673", "RABBITMQ_USER": "it_user", "RABBITMQ_PASS": "it_password_only", "RABBITMQ_VHOST": "integration", "ACCOUNT_SERVICE_BASE_URL": "http://127.0.0.1:8081"}
+    start("strategy", "AI/strategy_decision_service", strategy_env, [sys.executable, "-u", "main.py"])
+    wait("Order Execution, News, Market, and Strategy start", lambda: log_contains("order", "Started OrderExecutionServiceApplication") and log_contains("news", "Started NewsIngestionServiceApplication") and log_contains("market", "Started MarketDataServiceApplication") and log_contains("strategy", "Strategy & Decision Engine listening"))
+
+def test_topology():
+    check("Order event persister fanout binding exists", len(rabbit("/api/bindings/integration/e/order-events-fanout/q/order-events-persister")) == 1, "binding missing")
+    wait("All provider subscriptions are observed", lambda: len(fake("/control/subscriptions")[1]) >= 4)
+
+def test_news():
+    fake("/control/send?target=news", "POST", b'[{"T":"n","symbols":["AAPL","MSFT"],"headline":"' + RUN_ID.encode() + b'"},{"T":"n","symbols":["NVDA"],"headline":"second-' + RUN_ID.encode() + b'"}]')
+    wait("News batch publishes every symbol", lambda: len(queue_get("financial-news")) == 3)
+    fake("/control/send?target=news", "POST", b'[{"T":"n","symbols":[],"headline":"ignored"},{"T":"error","code":401,"msg":"denied"},{}]')
+    check("Invalid news frames do not crash News Ingestion", not log_contains("news", "Application run failed"), "news service terminated")
+
+def test_market():
+    bars = []
+    for index in range(27):
+        close = 100.0 + index
+        bars.append({"T":"b","S":"AAPL","o":close - .5,"h":close + .5,"l":close - 1,"c":close,"v":1000 + index,"t":"2026-08-22T00:%02d:00Z" % index})
+    fake("/control/send?target=market", "POST", json.dumps(bars).encode())
+    def valid_tick():
+        ticks = queue_get("market-data")
+        if not ticks: return False
+        payload = json.loads(ticks[0]["payload"])
+        bar = payload["bar"]
+        STATE["market_tick"] = payload
+        return payload["ticker"] == "AAPL" and all(key in bar for key in ["Open","High","Low","Close","Volume","Return","MA_5","MA_20","Volatility_5","RSI_14","MACD"])
+    wait("Market warm-up publishes a model-compatible feature vector", valid_tick, 60)
+    fake("/control/send?target=market", "POST", b'[{"T":"b","S":"AAPL","o":0,"h":1,"l":1,"c":1,"v":1}]')
+    check("Invalid market bar does not crash Market Data", not log_contains("market", "Application run failed"), "market service terminated")
+
+def test_strategy_order_projection():
+    prediction = {"ticker":"AAPL","direction":"UP","confidence":0.90,"testRunId":RUN_ID}
+    queue_publish("predictions", prediction)
+    def order_received(): return any(item.get("path") == "/v2/orders" for item in fake("/control/requests")[1])
+    wait("Strategy decision reaches the configured broker", order_received)
+    requests = [item for item in fake("/control/requests")[1] if item.get("path") == "/v2/orders" and item.get("method") == "POST"]
+    check("Broker request is routed once with a limit price", len(requests) == 1 and "limit_price" in requests[0].get("body", ""), requests)
+    wait("Order creation event is persisted", lambda: request("http://127.0.0.1:8085/internal/v1/orders")[1] != [])
+    fake("/control/send?target=trade", "POST", json.dumps({"stream":"trade_updates","data":{"event":"fill","event_id":"evt-" + RUN_ID,"order":{"id":"33333333-3333-3333-3333-333333333333","client_order_id":"fake-client-order","symbol":"AAPL","side":"buy","status":"filled","qty":"2","filled_qty":"2","filled_avg_price":"123.45","updated_at":"2026-08-22T00:01:00Z"}}}).encode())
+    wait("Trade update reaches the Persister", lambda: request("http://127.0.0.1:8085/internal/v1/orders")[1] and request("http://127.0.0.1:8085/internal/v1/orders")[1][0].get("status") == "filled")
+    status, orders, _ = request("http://127.0.0.1:8081/api/v1/orders")
+    check("Account Service serves the shared order projection", status == 200 and orders and orders[0].get("status") == "filled", orders)
+
 def main():
- try:
-  subprocess.run(['docker','compose','-f',str(IT/'compose.yaml'),'up','-d','--wait'],check=True)
-  subprocess.run(['javac','-d',str(IT/'fake-alpaca/classes'),str(IT/'fake-alpaca/src/FakeAlpaca.java')],check=True); p=subprocess.Popen(['java','-cp',str(IT/'fake-alpaca/classes'),'FakeAlpaca']);procs.append((p,None))
-  wait('infrastructure readiness',lambda:http('/health')[1]['status']=='UP'); wait('rabbitmq readiness',lambda:rabbit('/api/overview').get('rabbitmq_version'))
-  # Order Execution consumes a pre-existing ingress queue rather than declaring
-  # it. Create that test-only ingress before the listener starts.
-  rabbit('/api/queues/integration/orders.approved','PUT',{'durable':True,'auto_delete':False,'arguments':{}})
-  for d in ['news-ingestion-service','market-data-service','order-execution-service','account-service']: subprocess.run(['./mvnw','package','-q','-DskipTests'],cwd=ROOT/d,check=True)
-  common={'SPRING_RABBITMQ_HOST':'127.0.0.1','SPRING_RABBITMQ_PORT':'5673','SPRING_RABBITMQ_USERNAME':'it_user','SPRING_RABBITMQ_PASSWORD':'it_password_only','SPRING_RABBITMQ_VIRTUAL_HOST':'integration','ALPACA_API_KEY':'fake-key','ALPACA_API_SECRET':'fake-secret'}
-  start_jar('news','news-ingestion-service',{**common,'SERVER_PORT':'8082','ALPACA_API_NEWS_STREAM_URL':'ws://127.0.0.1:18081','ALPACA_API_SUBSCRIPTION_MESSAGE':'{"action":"subscribe","news":["*"]}'})
-  start_jar('market','market-data-service',{**common,'SERVER_PORT':'8083','ALPACA_API_MARKET_STREAM_URL':'ws://127.0.0.1:18082','ALPACA_API_SUBSCRIPTION_MESSAGE':'{"action":"subscribe","bars":["*"]}'})
-  start_jar('order','order-execution-service',{**common,'SERVER_PORT':'8084','ALPACA_API_STREAM_URL':'ws://127.0.0.1:18083','ALPACA_API_ORDER_ENDPOINT':'http://127.0.0.1:18080/v2/orders','ALPACA_API_SUBSCRIPTION_MESSAGE':'{"action":"listen","data":{"streams":["trade_updates"]}}'})
-  start_jar('account','account-service',{'DATABASE_URL':'jdbc:postgresql://127.0.0.1:15432/accounts_it','DATABASE_USERNAME':'accounts_it','DATABASE_PASSWORD':'accounts_password_only','KEYCLOAK_ISSUER_URI':'http://127.0.0.1:18080/issuer','SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI':'http://127.0.0.1:18080/jwks','ALPACA_PAPER_TRADING_BASE_URL':'http://127.0.0.1:18080','ALPACA_OAUTH_AUTHORIZE_URL':'http://127.0.0.1:18080/authorize','ALPACA_OAUTH_TOKEN_URL':'http://127.0.0.1:18080/oauth/token','ALPACA_OAUTH_CLIENT_ID':'fake-client','ALPACA_OAUTH_CLIENT_SECRET':'fake-secret','ALPACA_OAUTH_REDIRECT_URI':'http://127.0.0.1:8081/api/v1/alpaca/oauth/callback','SERVER_PORT':'8081'})
-  wait('stream subscriptions',lambda:len(http('/control/subscriptions')[1])>=3)
-  wait('account migration and authenticated readiness',lambda: urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8081/api/v1/me',headers={'Authorization':'Bearer '+http('/control/token')[1]['token']}),timeout=2).status==200)
-  http('/control/send?target=news','POST',b'[{"T":"n","symbols":["AAPL","MSFT"],"headline":"'+run_id.encode()+b'"}]'); wait('news websocket to RabbitMQ',lambda:len(get_queue('financial-news'))>=2)
-  http('/control/send?target=market','POST',b'[{"T":"b","S":"AAPL","o":1.1,"h":2.2,"l":1.0,"c":2.0,"v":9}]'); wait('market websocket to RabbitMQ',lambda:len(get_queue('market-data'))>=1)
-  order={'ticker':'AAPL','action':'BUY','quantity':1,'order_type':'LIMIT','limit_price':123.45,'testRunId':run_id};post_queue('orders.approved',order); wait('approved order reaches fake broker',lambda:len(http('/control/requests')[1])>=1)
-  req=http('/control/requests')[1]; orderreq=[x for x in req if x['path']=='/v2/orders']; assert_that('order request schema and headers',len(orderreq)==1 and 'AAPL' in orderreq[0]['body'] and orderreq[0]['apiKey']=='fake-key',str(orderreq))
-  post_queue('orders.approved',order); time.sleep(1); duplicate=[x for x in http('/control/requests')[1] if x['path']=='/v2/orders'];assert_that('duplicate approved order is idempotent',len(duplicate)==1,'two identical deliveries produced %d broker submissions'%len(duplicate),'Critical production defect')
-  http('/control/send?target=trade','POST',b'{"stream":"trade_updates","data":{"event":"fill","order":{"client_order_id":"'+run_id.encode()+b'","updated_at":"2026-01-01T00:00:00Z"}}}');wait('trade update reaches order event queues',lambda:len(get_queue('order-events-portfolio'))>=1)
- except subprocess.CalledProcessError as e:
-  failures.append(('controlled environment startup','Test-environment defect','command failed: '+str(e)))
- except Exception as e:
-  failures.append(('integration runner','Test-environment defect',repr(e)))
- finally:
-  for p,o in procs:
-   p.terminate();
-  for p,o in procs:
-   try:p.wait(8)
-   except: p.kill()
-   if o:o.close()
-  subprocess.run(['docker','compose','-f',str(IT/'compose.yaml'),'down','-v','--remove-orphans'])
-  (LOG/'summary.json').write_text(json.dumps({'runId':run_id,'passed':passed,'failures':failures},indent=2))
-  print(json.dumps({'passed':len(passed),'failed':len(failures),'artifact':str(LOG/'summary.json')},indent=2))
- if failures:sys.exit(1)
-if __name__=='__main__':main()
+    try:
+        subprocess.run(["docker", "compose", "-f", str(IT / "compose.yaml"), "up", "-d", "--wait"], check=True)
+        subprocess.run(["docker", "compose", "-f", str(IT / "compose.yaml"), "run", "--rm", "order-execution-migration"], check=True)
+        subprocess.run(["javac", "-d", str(IT / "fake-alpaca/classes"), str(IT / "fake-alpaca/src/FakeAlpaca.java")], check=True)
+        fake_process = subprocess.Popen(["java", "-cp", str(IT / "fake-alpaca/classes"), "FakeAlpaca"]); PROCESSES.append((fake_process, None))
+        scenario("infrastructure readiness", lambda: wait("Infrastructure readiness", lambda: fake("/health")[1]["status"] == "UP" and rabbit("/api/overview").get("rabbitmq_version")))
+        scenario("service packaging", package_all)
+        scenario("service startup", start_services)
+        scenario("RabbitMQ topology", test_topology)
+        scenario("news ingestion flow", test_news)
+        scenario("market data flow", test_market)
+        scenario("strategy, order execution, and projection flow", test_strategy_order_projection)
+    except Exception as error:
+        FAILED.append(("suite bootstrap", "Test-suite execution failure", repr(error)))
+    finally:
+        for process, stream in PROCESSES:
+            if process.poll() is None: process.send_signal(signal.SIGTERM)
+        for process, stream in PROCESSES:
+            try: process.wait(10)
+            except subprocess.TimeoutExpired: process.kill()
+            if stream: stream.close()
+        subprocess.run(["docker", "compose", "-f", str(IT / "compose.yaml"), "down", "-v", "--remove-orphans"], check=False)
+        (ARTIFACTS / "summary.json").write_text(json.dumps({"runId":RUN_ID,"passed":PASSED,"failures":FAILED}, indent=2))
+        print(json.dumps({"passed":len(PASSED),"failed":len(FAILED),"artifact":str(ARTIFACTS / "summary.json")}, indent=2))
+    return 1 if FAILED else 0
+
+if __name__ == "__main__": sys.exit(main())

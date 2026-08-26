@@ -38,11 +38,6 @@ public class RabbitMqConfig {
     }
 
     @Bean
-    public Queue connectionEventsQueue() {
-        return new Queue(rabbitMqProperties.getConnectionEventsQueue(), true);
-    }
-
-    @Bean
     public FanoutExchange orderEventsFanoutExchange() {
         return new FanoutExchange(rabbitMqProperties.getOrderEventsExchange(), true, false);
     }

@@ -1,6 +1,5 @@
 create table order_projection (
     order_id uuid primary key,
-    connection_id uuid not null,
     alpaca_order_id uuid not null unique,
     client_order_id varchar(128),
     symbol varchar(16) not null,

@@ -1,229 +1,80 @@
 package com.ai_got_this.account_service.client;
 
 import com.ai_got_this.account_service.config.AlpacaProperties;
-import com.ai_got_this.account_service.domain.AlpacaConnection;
-import com.ai_got_this.account_service.service.ApiException;
-import com.ai_got_this.account_service.service.SecretStore;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
-import java.util.function.Supplier;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.client.RestTemplate;
 
+/** Client for the installation's one configured Alpaca paper account. */
 @Component
 public class AlpacaTradingClient {
+    private final RestTemplate restTemplate;
+    private final AlpacaProperties properties;
 
-    private final WebClient webClient;
-    private final SecretStore secretStore;
-
-    public AlpacaTradingClient(AlpacaProperties alpacaProperties, SecretStore secretStore) {
-        this.webClient = WebClient.builder()
-                .baseUrl(alpacaProperties.paperTradingBaseUrl())
-                .build();
-        this.secretStore = secretStore;
+    public AlpacaTradingClient(RestTemplate restTemplate, AlpacaProperties properties) {
+        this.restTemplate = restTemplate;
+        this.properties = properties;
     }
 
-    public Account getAccount(AlpacaConnection connection) {
-        return executeBrokerCall(
-                "ALPACA_ACCOUNT_VERIFICATION_FAILED",
-                "Unable to verify Alpaca account.",
-                () -> authorizedRequest(HttpMethod.GET, connection, "/v2/account")
-                        .retrieve()
-                        .bodyToMono(Account.class)
-                        .block());
+    public BrokerAccount account() {
+        return restTemplate.exchange(url("/v2/account"), HttpMethod.GET, new HttpEntity<Void>(headers()), BrokerAccount.class).getBody();
     }
 
-    public BrokerWatchlist createWatchlist(
-            AlpacaConnection connection,
-            String name,
-            List<String> symbols) {
-        BrokerWatchlist watchlist = executeBrokerCall(
-                "ALPACA_WATCHLIST_CREATE_FAILED",
-                "Unable to create the Alpaca watchlist.",
-                () -> authorizedRequest(HttpMethod.POST, connection, "/v2/watchlists")
-                        .bodyValue(new WatchlistWrite(name, symbols))
-                        .retrieve()
-                        .bodyToMono(BrokerWatchlist.class)
-                        .block());
-
-        if (watchlist == null || watchlist.id() == null) {
-            throw brokerFailure(
-                    "ALPACA_WATCHLIST_CREATE_FAILED",
-                    "Alpaca did not return a watchlist identifier.");
-        }
-
-        return watchlist;
+    public List<BrokerPosition> positions() {
+        BrokerPosition[] result = restTemplate.exchange(url("/v2/positions"), HttpMethod.GET, new HttpEntity<Void>(headers()), BrokerPosition[].class).getBody();
+        return result == null ? List.of() : List.of(result);
     }
 
-    public BrokerWatchlist replaceWatchlist(
-            AlpacaConnection connection,
-            UUID watchlistId,
-            String name,
-            List<String> symbols) {
-        BrokerWatchlist watchlist = executeBrokerCall(
-                "ALPACA_WATCHLIST_UPDATE_FAILED",
-                "Unable to update the Alpaca watchlist.",
-                () -> authorizedRequest(HttpMethod.PUT, connection, "/v2/watchlists/{watchlistId}", watchlistId)
-                        .bodyValue(new WatchlistWrite(name, symbols))
-                        .retrieve()
-                        .bodyToMono(BrokerWatchlist.class)
-                        .block());
-
-        if (watchlist == null || watchlist.id() == null) {
-            throw brokerFailure(
-                    "ALPACA_WATCHLIST_UPDATE_FAILED",
-                    "Alpaca did not return an updated watchlist.");
-        }
-
-        return watchlist;
+    public List<BrokerWatchlist> watchlists() {
+        BrokerWatchlist[] result = restTemplate.exchange(url("/v2/watchlists"), HttpMethod.GET, new HttpEntity<Void>(headers()), BrokerWatchlist[].class).getBody();
+        return result == null ? List.of() : List.of(result);
     }
 
-    public void addWatchlistAsset(
-            AlpacaConnection connection,
-            UUID watchlistId,
-            String symbol) {
-        executeBrokerCall(
-                "ALPACA_WATCHLIST_UPDATE_FAILED",
-                "Unable to add the asset to the Alpaca watchlist.",
-                () -> authorizedRequest(HttpMethod.POST, connection, "/v2/watchlists/{watchlistId}", watchlistId)
-                        .bodyValue(new AssetWrite(symbol))
-                        .retrieve()
-                        .bodyToMono(BrokerWatchlist.class)
-                        .block());
+    public BrokerWatchlist createWatchlist(String name, List<String> symbols) {
+        return restTemplate.exchange(url("/v2/watchlists"), HttpMethod.POST, new HttpEntity<>(Map.of("name", name, "symbols", symbols), headers()), BrokerWatchlist.class).getBody();
     }
 
-    public void removeWatchlistAsset(
-            AlpacaConnection connection,
-            UUID watchlistId,
-            String symbol) {
-        executeBrokerCall(
-                "ALPACA_WATCHLIST_UPDATE_FAILED",
-                "Unable to remove the asset from the Alpaca watchlist.",
-                () -> authorizedRequest(
-                                HttpMethod.DELETE,
-                                connection,
-                                "/v2/watchlists/{watchlistId}/{symbol}",
-                                watchlistId,
-                                symbol)
-                        .retrieve()
-                        .bodyToMono(Void.class)
-                        .block());
+    public BrokerWatchlist replaceWatchlist(UUID id, String name, List<String> symbols) {
+        return restTemplate.exchange(url("/v2/watchlists/" + id), HttpMethod.PUT, new HttpEntity<>(Map.of("name", name, "symbols", symbols), headers()), BrokerWatchlist.class).getBody();
     }
 
-    public void deleteWatchlist(AlpacaConnection connection, UUID watchlistId) {
-        executeBrokerCall(
-                "ALPACA_WATCHLIST_DELETE_FAILED",
-                "Unable to delete the Alpaca watchlist.",
-                () -> authorizedRequest(HttpMethod.DELETE, connection, "/v2/watchlists/{watchlistId}", watchlistId)
-                        .retrieve()
-                        .bodyToMono(Void.class)
-                        .block());
+    public void addWatchlistAsset(UUID id, String symbol) {
+        restTemplate.exchange(url("/v2/watchlists/" + id), HttpMethod.POST, new HttpEntity<>(Map.of("symbol", symbol), headers()), Void.class);
     }
 
-    public List<BrokerWatchlist> getWatchlists(AlpacaConnection connection) {
-        List<BrokerWatchlist> watchlists = executeBrokerCall(
-                "ALPACA_WATCHLIST_RECONCILIATION_FAILED",
-                "Unable to retrieve Alpaca watchlists.",
-                () -> authorizedRequest(HttpMethod.GET, connection, "/v2/watchlists")
-                        .retrieve()
-                        .bodyToFlux(BrokerWatchlist.class)
-                        .collectList()
-                        .block());
-
-        return watchlists == null ? List.of() : watchlists;
+    public void removeWatchlistAsset(UUID id, String symbol) {
+        restTemplate.exchange(url("/v2/watchlists/" + id + "/" + symbol), HttpMethod.DELETE, new HttpEntity<Void>(headers()), Void.class);
     }
 
-    public List<BrokerPosition> getPositions(AlpacaConnection connection) {
-        List<BrokerPosition> positions = executeBrokerCall(
-                "ALPACA_POSITION_RECONCILIATION_FAILED",
-                "Unable to retrieve Alpaca positions.",
-                () -> authorizedRequest(HttpMethod.GET, connection, "/v2/positions")
-                        .retrieve()
-                        .bodyToFlux(BrokerPosition.class)
-                        .collectList()
-                        .block());
-
-        return positions == null ? List.of() : positions;
+    public void deleteWatchlist(UUID id) {
+        restTemplate.exchange(url("/v2/watchlists/" + id), HttpMethod.DELETE, new HttpEntity<Void>(headers()), Void.class);
     }
 
-    private WebClient.RequestBodySpec authorizedRequest(
-            HttpMethod method,
-            AlpacaConnection connection,
-            String uri,
-            Object... uriVariables) {
-        String accessToken = secretStore.read(connection.getSecretReference());
-        if (accessToken == null) {
-            throw new ApiException(
-                    HttpStatus.CONFLICT,
-                    "ALPACA_REAUTH_REQUIRED",
-                    "Reconnect your Alpaca paper account to continue.");
-        }
-
-        return webClient.method(method)
-                .uri(uri, uriVariables)
-                .headers(headers -> headers.setBearerAuth(accessToken));
+    private HttpHeaders headers() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+        headers.set("APCA-API-KEY-ID", properties.apiKey());
+        headers.set("APCA-API-SECRET-KEY", properties.apiSecret());
+        return headers;
     }
 
-    private <T> T executeBrokerCall(
-            String errorCode,
-            String errorMessage,
-            Supplier<T> brokerCall) {
-        try {
-            return brokerCall.get();
-        } catch (ApiException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw brokerFailure(errorCode, errorMessage);
-        }
-    }
+    private String url(String path) { return properties.paperTradingBaseUrl().replaceAll("/$", "") + path; }
 
-    private ApiException brokerFailure(String errorCode, String message) {
-        return new ApiException(HttpStatus.BAD_GATEWAY, errorCode, message);
-    }
-
-    public record Account(
-            UUID id,
-            String account_number,
-            String status,
-            String currency,
-            BigDecimal cash,
-            BigDecimal buying_power,
-            BigDecimal non_marginable_buying_power,
-            BigDecimal portfolio_value,
-            BigDecimal equity,
-            BigDecimal last_equity,
-            BigDecimal long_market_value,
-            boolean account_blocked,
-            boolean trading_blocked,
-            boolean trade_suspended_by_user,
-            boolean shorting_enabled) {
-    }
-
-    public record BrokerWatchlist(UUID id, String name, List<BrokerAsset> assets) {
-    }
-
-    public record BrokerAsset(String symbol) {
-    }
-
-    public record BrokerPosition(
-            UUID asset_id,
-            String symbol,
-            BigDecimal qty,
-            BigDecimal qty_available,
-            String side,
-            BigDecimal avg_entry_price,
-            BigDecimal cost_basis,
-            BigDecimal current_price,
-            BigDecimal market_value,
-            BigDecimal unrealized_pl) {
-    }
-
-    private record WatchlistWrite(String name, List<String> symbols) {
-    }
-
-    private record AssetWrite(String symbol) {
-    }
+    public record BrokerAccount(UUID id, String account_number, String status, String currency, BigDecimal cash,
+            BigDecimal buying_power, BigDecimal non_marginable_buying_power, BigDecimal portfolio_value,
+            BigDecimal equity, BigDecimal last_equity, BigDecimal long_market_value, boolean account_blocked,
+            boolean trading_blocked, boolean trade_suspended_by_user, boolean shorting_enabled) {}
+    public record BrokerPosition(UUID asset_id, String symbol, BigDecimal qty, BigDecimal avg_entry_price,
+            BigDecimal market_value, BigDecimal cost_basis, BigDecimal current_price, BigDecimal unrealized_pl,
+            String side) {}
+    public record BrokerWatchlist(UUID id, String name, List<BrokerAsset> assets) {}
+    public record BrokerAsset(String symbol) {}
 }

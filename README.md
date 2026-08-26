@@ -1,20 +1,23 @@
 # 24hours-trading-bot
 
-Algorithmic paper-trading platform and multi-service bot architecture.
+An event-driven Alpaca paper-trading bot for one configured account. The whole
+installation uses the same `ALPACA_API_KEY` and `ALPACA_API_SECRET`; it has no
+user login, OAuth flow, account selector, or per-account routing.
 
----
+Set the two credentials through your deployment secret manager for Account
+Service, Order Execution Service, Order Execution Persister, Market Data, and
+News Ingestion. Never commit them. The default broker URL is Alpaca paper
+trading.
 
-## Running Frontend Tests
+Core flow: market/news ingestion → predictions → strategy → approved order →
+Order Execution → Alpaca → order projection. Account Service exposes the one
+account dashboard, positions, recent orders, reconciliation, and watchlists.
 
-```bash
-cd frontend/web
-npm test
+Useful checks:
+
+```sh
+(cd account-service && ./mvnw test)
+(cd order-execution-service && ./mvnw test)
+(cd order-execution-persister && ./mvnw test)
+(cd frontend/web && npm run build)
 ```
-
-To run tests in interactive watch mode or generate coverage reports:
-```bash
-npx vitest
-npx vitest run --coverage
-```
-
-See [`frontend/README.md`](./frontend/README.md) for full testing and frontend details.

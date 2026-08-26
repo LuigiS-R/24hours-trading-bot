@@ -8,7 +8,6 @@ import lombok.Data;
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OrderEvent {
-    private String connectionId;
     private String stream;
     private String at;
     private String event;

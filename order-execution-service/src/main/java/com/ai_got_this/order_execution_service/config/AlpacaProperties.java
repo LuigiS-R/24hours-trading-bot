@@ -12,4 +12,6 @@ public class AlpacaProperties {
     private String subscriptionMessage;
     private String orderEndpoint;
     private String paperTradingBaseUrl;
+    private String key;
+    private String secret;
 }

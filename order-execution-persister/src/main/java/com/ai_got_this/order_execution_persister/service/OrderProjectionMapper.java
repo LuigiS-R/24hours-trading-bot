@@ -12,9 +12,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class OrderProjectionMapper {
-    public void applyBrokerOrder(OrderProjection projection, UUID connectionId, AlpacaOrdersClient.BrokerOrder order) {
+    public void applyBrokerOrder(OrderProjection projection, AlpacaOrdersClient.BrokerOrder order) {
         projection.setOrderId(projection.getOrderId() == null ? UUID.randomUUID() : projection.getOrderId());
-        projection.setConnectionId(connectionId);
         projection.setAlpacaOrderId(order.id());
         projection.setClientOrderId(order.client_order_id());
         projection.setSymbol(order.symbol());

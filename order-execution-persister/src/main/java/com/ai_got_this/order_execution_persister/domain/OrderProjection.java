@@ -16,9 +16,6 @@ public class OrderProjection {
     @Id
     private UUID orderId;
 
-    @Column(nullable = false)
-    private UUID connectionId;
-
     @Column(nullable = false, unique = true)
     private UUID alpacaOrderId;
 

@@ -9,5 +9,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface OrderProjectionRepository extends JpaRepository<OrderProjection, UUID> {
     Optional<OrderProjection> findByAlpacaOrderId(UUID alpacaOrderId);
 
-    List<OrderProjection> findTop20ByConnectionIdOrderByUpdatedAtDesc(UUID connectionId);
+    List<OrderProjection> findTop20ByOrderByUpdatedAtDesc();
 }

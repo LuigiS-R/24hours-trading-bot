@@ -4,7 +4,6 @@ import json
 import httpx
 import pika
 
-from keycloak import KeycloakAuthenticationError, KeycloakClientCredentials
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
@@ -16,28 +15,25 @@ RABBITMQ_APPROVED_ORDERS_QUEUE = os.getenv(
     "RABBITMQ_APPROVED_ORDERS_QUEUE", "orders.approved"
 )
 ACCOUNT_SERVICE_BASE_URL = os.getenv("ACCOUNT_SERVICE_BASE_URL", "http://localhost:8081").rstrip("/")
-PORTFOLIO_SERVICE_ENDPOINT = f"{ACCOUNT_SERVICE_BASE_URL}/internal/v1/accounts/portfolio"
+PORTFOLIO_SERVICE_ENDPOINT = f"{ACCOUNT_SERVICE_BASE_URL}/internal/v1/portfolio"
 PORTFOLIO_SERVICE_TIMEOUT_SECONDS = float(
     os.getenv("PORTFOLIO_SERVICE_TIMEOUT_SECONDS", "5.0")
 )
-keycloak_client = KeycloakClientCredentials.from_environment()
 
 # Decision Parameters
 CONFIDENCE_THRESHOLD = 0.65   # Only trade if model is >= 65% confident
 MAX_PORTFOLIO_RISK_PCT = 0.05 # Max 5% of total capital per trade
 
 def fetch_portfolio():
-    """Retrieve the current portfolio snapshot using Strategy's service JWT."""
+    """Retrieve the one configured account's current portfolio snapshot."""
     try:
-        access_token = keycloak_client.access_token()
         response = httpx.get(
             PORTFOLIO_SERVICE_ENDPOINT,
-            headers={"Authorization": f"Bearer {access_token}"},
             timeout=PORTFOLIO_SERVICE_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
         return response.json()
-    except (KeycloakAuthenticationError, httpx.HTTPError, ValueError) as error:
+    except (httpx.HTTPError, ValueError) as error:
         print(f" [Portfolio] Unable to retrieve portfolio: {error}")
         return None
 
@@ -46,8 +42,8 @@ def evaluate_trading_decisions(prediction, portfolio_response, current_price=180
     """
     Improved decision rules:
     - Checks confidence threshold to avoid low-certainty trades.
-    - Applies the strategy independently to each brokerage connection.
-    - Returns one order per connection that meets the decision criteria.
+    - Applies the strategy to the installation's one configured brokerage account.
+    - Returns at most one order.
     """
     ticker = prediction["ticker"]
     direction = prediction["direction"]
@@ -58,51 +54,17 @@ def evaluate_trading_decisions(prediction, portfolio_response, current_price=180
         print(f" [Decision] {ticker}: Confidence {confidence:.2f} below threshold {CONFIDENCE_THRESHOLD}. HOLD.")
         return []
 
-    decisions = []
-    for portfolio in portfolio_response["portfolios"]:
-        connection_id = portfolio["connectionId"]
-
-        # 2. Buy Decision: risk-size only against this connection's cash.
-        if direction == "UP":
-            allocated_capital = portfolio["cashBalance"] * MAX_PORTFOLIO_RISK_PCT
-            quantity = int(allocated_capital // current_price)
-
-            if quantity <= 0:
-                print(f" [Decision] {connection_id}: Insufficient cash to buy {ticker}.")
-                continue
-
-            decisions.append({
-                "connectionId": connection_id,
-                "ticker": ticker,
-                "action": "BUY",
-                "quantity": quantity,
-                "order_type": "LIMIT",
-                "limit_price": round(current_price * 1.001, 2), # Slight buffer for fills
-                "reason": f"LSTM UP prediction with {confidence*100:.1f}% confidence"
-            })
-
-        # 3. Sell Decision: sell only the holding in this connection.
-        elif direction == "DOWN":
-            current_holding = sum(
-                position["quantity"]
-                for position in portfolio["positions"]
-                if position["ticker"] == ticker
-            )
-            if current_holding <= 0:
-                print(f" [Decision] {connection_id}: {ticker} DOWN, but no open position to sell.")
-                continue
-
-            decisions.append({
-                "connectionId": connection_id,
-                "ticker": ticker,
-                "action": "SELL",
-                "quantity": current_holding,
-                "order_type": "LIMIT",
-                "limit_price": round(current_price * 0.999, 2),
-                "reason": f"LSTM DOWN prediction with {confidence*100:.1f}% confidence"
-            })
-
-    return decisions
+    account = portfolio_response.get("account")
+    if not account:
+        return []
+    positions = portfolio_response.get("positions", [])
+    if direction == "UP":
+        quantity = int((float(account.get("cash") or 0) * MAX_PORTFOLIO_RISK_PCT) // current_price)
+        return [] if quantity <= 0 else [{"ticker": ticker, "action": "BUY", "quantity": quantity, "order_type": "LIMIT", "limit_price": round(current_price * 1.001, 2), "reason": f"LSTM UP prediction with {confidence*100:.1f}% confidence"}]
+    if direction == "DOWN":
+        quantity = sum(float(position.get("quantity") or 0) for position in positions if position.get("symbol") == ticker)
+        return [] if quantity <= 0 else [{"ticker": ticker, "action": "SELL", "quantity": int(quantity), "order_type": "LIMIT", "limit_price": round(current_price * 0.999, 2), "reason": f"LSTM DOWN prediction with {confidence*100:.1f}% confidence"}]
+    return []
 
 def main():
     credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASS)

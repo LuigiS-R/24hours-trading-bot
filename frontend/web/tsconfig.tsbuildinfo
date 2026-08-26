@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/setuptests.ts","./src/vite-env.d.ts","./src/api/accountsclient.test.ts","./src/api/accountsclient.ts","./src/api/types.ts","./src/auth/authprovider.tsx","./src/auth/requireauth.tsx","./src/auth/keycloak.ts","./src/components/ui.tsx","./src/pages/pages.test.tsx","./src/pages/pages.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/api/accountsclient.ts","./src/api/types.ts","./src/components/ui.tsx","./src/pages/pages.tsx"],"version":"5.9.3"}

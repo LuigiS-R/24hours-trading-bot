@@ -9,9 +9,6 @@ import lombok.Data;
 public class Watchlist extends AuditedEntity {
     @Id private UUID watchlistId;
 
-    @Column(nullable = false)
-    private UUID connectionId;
-
     @Column(nullable = false, unique = true)
     private UUID alpacaWatchlistId;
 

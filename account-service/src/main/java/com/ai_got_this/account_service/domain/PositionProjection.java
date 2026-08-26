@@ -11,9 +11,6 @@ import lombok.Data;
 public class PositionProjection {
     @Id private UUID positionId;
 
-    @Column(nullable = false)
-    private UUID connectionId;
-
     private UUID alpacaAssetId;
 
     @Column(nullable = false)

@@ -15,10 +15,10 @@ import java.util.List;
 @Component
 @Slf4j
 public class AlpacaWebSocketHandler extends TextWebSocketHandler{
-    private ObjectMapper objectMapper;
-    private NewsPublisher newsPublisher;
-    private AlpacaProperties alpacaProperties;
-    private AlpacaWebSocketReconnectSupervisor reconnectSupervisor;
+    private final ObjectMapper objectMapper;
+    private final NewsPublisher newsPublisher;
+    private final AlpacaProperties alpacaProperties;
+    private final AlpacaWebSocketReconnectSupervisor reconnectSupervisor;
 
     public AlpacaWebSocketHandler(ObjectMapper objectMapper, NewsPublisher newsPublisher, AlpacaProperties alpacaProperties, AlpacaWebSocketReconnectSupervisor reconnectSupervisor) {
         this.objectMapper = objectMapper;
@@ -30,10 +30,11 @@ public class AlpacaWebSocketHandler extends TextWebSocketHandler{
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
-        String subscriptionMessage = alpacaProperties.getSubscriptionMessage();
         log.info("Connected to Alpaca WebSocket server");
         reconnectSupervisor.onConnectionEstablished();
+
         log.info("Subscribing to news stream...");
+        String subscriptionMessage = alpacaProperties.getSubscriptionMessage();
         session.sendMessage(new TextMessage(subscriptionMessage));
     }
 

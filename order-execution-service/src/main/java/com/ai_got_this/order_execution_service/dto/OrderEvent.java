@@ -9,7 +9,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OrderEvent {
-    private String connectionId;
     private String stream;
     private String at;
     private String event;
@@ -25,7 +24,6 @@ public class OrderEvent {
 
     public OrderEvent(TradeUpdateResponse tradeUpdateResponse) {
         TradeUpdateData data = tradeUpdateResponse.getData();
-        connectionId = null;
         stream = tradeUpdateResponse.getStream();
         if (data != null) {
             at = data.getAt();
@@ -42,10 +40,9 @@ public class OrderEvent {
         }
     }
 
-    public static OrderEvent httpOrderCreated(String connectionId, TradeUpdateOrder order) {
+    public static OrderEvent httpOrderCreated(TradeUpdateOrder order) {
         OrderEvent event = new OrderEvent();
         String timestamp = Instant.now().toString();
-        event.setConnectionId(connectionId);
         event.setStream("HTTP");
         event.setEvent("create");
         event.setAt(timestamp);
