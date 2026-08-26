@@ -4,3 +4,4 @@ __pycache__/
 AI/news_impact_service/.venv/ 
 *.keras
 node_modules
+/debug
